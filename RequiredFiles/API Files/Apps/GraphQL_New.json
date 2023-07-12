@@ -1,0 +1,132 @@
+{
+    "imports": [
+        "github.com/project-flogo/flow",
+        "github.com/project-flogo/contrib/activity/actreturn",
+        "github.com/project-flogo/graphql/trigger/graphql"
+    ],
+    "name": "GraphQL_New",
+    "description": " ",
+    "version": "1.0.0",
+    "type": "flogo:app",
+    "appModel": "1.1.1",
+    "tags": [],
+    "feVersion": "2.14.0",
+    "triggers": [
+        {
+            "ref": "#graphql",
+            "name": "tibco-graphql",
+            "description": "Simple GraphQL Trigger",
+            "settings": {
+                "port": 7879,
+                "path": "/graphql",
+                "schemaFile": {
+                    "filename": "test.gql",
+                    "content": "data:application/octet-stream;base64,ZW51bSBFcGlzb2RlIHsgTkVXSE9QRSwgRU1QSVJFLCBKRURJIH0NCmludGVyZmFjZSBDaGFyYWN0ZXIgew0KICBpZDogU3RyaW5nIQ0KICBuYW1lOiBTdHJpbmcNCiAgYXBwZWFyc0luOiBbRXBpc29kZV0NCiAgZnJpZW5kczogW0NoYXJhY3Rlcl0NCn0NCnR5cGUgSHVtYW4gaW1wbGVtZW50cyBDaGFyYWN0ZXIgew0KICBpZDogU3RyaW5nIQ0KICBuYW1lOiBTdHJpbmcNCiAgZnJpZW5kczogW0NoYXJhY3Rlcl0NCiAgYXBwZWFyc0luOiBbRXBpc29kZV0NCiAgaG9tZVBsYW5ldDogU3RyaW5nDQp9DQppbnB1dCBDaGFyYWN0ZXJSZXZpZXcgew0KICBpZDogU3RyaW5nIQ0KICAgIHJhdGluZzogSW50DQogICAgY29tbWVudDogU3RyaW5nDQp9DQp0eXBlIFF1ZXJ5IHsNCiAgIkdldCBodW1hbiBkZXRhaWxzIg0KICBodW1hbigiVGhlIGlkIG9mIEh1bWFuLiIgaWQ6IFN0cmluZyEgPSAiZHVtbXkiKTogSHVtYW4NCn0="
+                },
+                "secureConnection": false,
+                "graphqlSchema": "enum Episode { NEWHOPE, EMPIRE, JEDI }\r\ninterface Character {\r\n  id: String!\r\n  name: String\r\n  appearsIn: [Episode]\r\n  friends: [Character]\r\n}\r\ntype Human implements Character {\r\n  id: String!\r\n  name: String\r\n  friends: [Character]\r\n  appearsIn: [Episode]\r\n  homePlanet: String\r\n}\r\ninput CharacterReview {\r\n  id: String!\r\n    rating: Int\r\n    comment: String\r\n}\r\ntype Query {\r\n  \"Get human details\"\r\n  human(\"The id of Human.\" id: String! = \"dummy\"): Human\r\n}"
+            },
+            "id": "GraphQLTrigger",
+            "handlers": [
+                {
+                    "description": "Get human details",
+                    "settings": {
+                        "operation": "Query",
+                        "resolverFor": "human"
+                    },
+                    "action": {
+                        "ref": "github.com/project-flogo/flow",
+                        "settings": {
+                            "flowURI": "res://flow:Query_human"
+                        },
+                        "input": {
+                            "arguments": "=$.arguments"
+                        },
+                        "output": {
+                            "data": "=$.data"
+                        }
+                    },
+                    "schemas": {
+                        "reply": {
+                            "data": {
+                                "type": "json",
+                                "value": "{\"type\":\"object\",\"properties\":{\"Human\":{\"type\":\"object\",\"required\":[\"id\"],\"properties\":{\"id\":{\"type\":\"string\"},\"name\":{\"type\":\"string\"},\"friends\":{\"type\":\"array\",\"items\":{\"type\":\"any\"}},\"appearsIn\":{\"type\":\"array\",\"items\":{\"type\":\"string\"}},\"homePlanet\":{\"type\":\"string\"}}}},\"required\":[]}",
+                                "fe_metadata": "{\"type\":\"object\",\"properties\":{\"Human\":{\"type\":\"object\",\"required\":[\"id\"],\"properties\":{\"id\":{\"type\":\"string\"},\"name\":{\"type\":\"string\"},\"friends\":{\"type\":\"array\",\"items\":{\"type\":\"any\"}},\"appearsIn\":{\"type\":\"array\",\"items\":{\"type\":\"string\"}},\"homePlanet\":{\"type\":\"string\"}}}},\"required\":[]}"
+                            }
+                        },
+                        "output": {
+                            "arguments": {
+                                "type": "json",
+                                "value": "{\"type\":\"object\",\"properties\":{\"id\":{\"type\":\"string\"}},\"required\":[\"id\"]}",
+                                "fe_metadata": "{\"type\":\"object\",\"properties\":{\"id\":{\"type\":\"string\"}},\"required\":[\"id\"]}"
+                            }
+                        }
+                    },
+                    "name": "Query_human"
+                }
+            ]
+        }
+    ],
+    "resources": [
+        {
+            "id": "flow:Query_human",
+            "data": {
+                "name": "Query_human",
+                "description": "Get human details",
+                "links": [],
+                "tasks": [
+                    {
+                        "id": "Return",
+                        "name": "Return",
+                        "description": "Simple Return Activity",
+                        "activity": {
+                            "ref": "#actreturn",
+                            "settings": {
+                                "mappings": {
+                                    "data": {
+                                        "mapping": {
+                                            "Human": {
+                                                "id": "100",
+                                                "name": "police"
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                ],
+                "metadata": {
+                    "input": [
+                        {
+                            "name": "arguments",
+                            "type": "object",
+                            "schema": {
+                                "type": "json",
+                                "value": "{\"id\":{\"type\":\"string\"}}"
+                            }
+                        }
+                    ],
+                    "output": [
+                        {
+                            "name": "data",
+                            "type": "object",
+                            "schema": {
+                                "type": "json",
+                                "value": "{\"Human\":{\"type\":\"object\",\"required\":[\"id\"],\"properties\":{\"id\":{\"type\":\"string\"},\"name\":{\"type\":\"string\"},\"friends\":{\"type\":\"array\",\"items\":{\"type\":\"any\"}},\"appearsIn\":{\"type\":\"array\",\"items\":{\"type\":\"string\"}},\"homePlanet\":{\"type\":\"string\"}}}}"
+                            }
+                        }
+                    ],
+                    "fe_metadata": {
+                        "input": "{\"type\":\"object\",\"title\":\"GraphQLTrigger\",\"properties\":{\"arguments\":{\"type\":\"object\",\"properties\":{\"id\":{\"type\":\"string\"}},\"required\":[\"id\"]}}}",
+                        "output": "{\"type\":\"object\",\"title\":\"Inputs\",\"properties\":{\"data\":{\"type\":\"object\",\"properties\":{\"Human\":{\"type\":\"object\",\"required\":[\"id\"],\"properties\":{\"id\":{\"type\":\"string\"},\"name\":{\"type\":\"string\"},\"friends\":{\"type\":\"array\",\"items\":{\"type\":\"any\"}},\"appearsIn\":{\"type\":\"array\",\"items\":{\"type\":\"string\"}},\"homePlanet\":{\"type\":\"string\"}}}},\"required\":[]}},\"required\":[]}"
+                    }
+                },
+                "flowId": "23e20ee6-ce7d-43e5-8d62-d15ad358aee3"
+            }
+        }
+    ],
+    "properties": [],
+    "connections": {},
+    "contrib": "W10="
+}

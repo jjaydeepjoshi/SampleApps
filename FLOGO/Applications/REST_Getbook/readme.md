@@ -16,7 +16,7 @@ If you want to test Error Handler, you can hit the above url with Invalid ISBN n
 You can check the sample JSON data for correct ISBN to be used while testing the samples - https://my-json-server.typicode.com/tibcosoftware/tci-flogo/Book
 Import a sample
 
-Download the sample's .json file.
+Download the flogo.sample.rest_getBooks.json file.
 
 Create a new empty app. Create an app
 

@@ -28,11 +28,25 @@ required):
 cd story-app/backend
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
-uvicorn app.main:app --reload
+uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
 `ffmpeg` (with `ffprobe`) must also be installed and on `PATH`
 (`apt install ffmpeg` / `brew install ffmpeg`).
+
+### Connecting from a real phone (not an emulator)
+
+`--host 0.0.0.0` is required — without it, uvicorn only accepts connections
+from `localhost` and a phone on the same Wi-Fi can't reach it at all. Then:
+
+1. Find your computer's LAN IP (`ipconfig getifaddr en0` on Mac, `ipconfig`
+   on Windows, `hostname -I` on Linux).
+2. Make sure your phone and computer are on the same Wi-Fi network.
+3. In the app's Settings screen, set the backend URL to
+   `http://<that-ip>:8000/` (not `10.0.2.2`, which only exists inside the
+   Android Emulator).
+4. Check your computer's firewall isn't blocking incoming connections on
+   port 8000.
 
 ### API keys: bring-your-own, per user, from the app
 

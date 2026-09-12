@@ -18,6 +18,21 @@ android {
         buildConfigField("String", "API_BASE_URL", "\"http://10.0.2.2:8000/\"")
     }
 
+    signingConfigs {
+        getByName("debug") {
+            // Committed on purpose (it's a debug-only, publicly-known-password
+            // keystore, never used for release). Without a fixed keystore,
+            // every CI build machine would auto-generate its own debug key,
+            // so each new APK would be signed differently and Android would
+            // treat it as a different app on install — wiping this app's
+            // saved settings (including the user's API keys) every update.
+            storeFile = file("../debug.keystore")
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+        }
+    }
+
     buildFeatures {
         compose = true
         buildConfig = true
@@ -37,6 +52,9 @@ android {
     }
 
     buildTypes {
+        debug {
+            signingConfig = signingConfigs.getByName("debug")
+        }
         release {
             isMinifyEnabled = false
         }

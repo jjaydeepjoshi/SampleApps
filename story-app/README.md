@@ -23,3 +23,13 @@ clip per scene, and mux it all into one final video.
 3. On first launch, the app opens straight to Settings — get a free Groq key
    (https://console.groq.com/keys) and, for video, a free Hugging Face token
    (https://huggingface.co/settings/tokens), paste them in, and Save.
+
+### Saved API keys survive app updates
+
+`android/debug.keystore` is committed on purpose and every CI build signs
+with it (see `app/build.gradle.kts`). Without a fixed keystore, each new APK
+build would be signed differently, Android would treat it as a different
+app on install, and installing an update would silently wipe the app's
+saved settings — including your API keys. As long as you install new
+builds over the existing app (don't manually uninstall first), your saved
+keys carry over.

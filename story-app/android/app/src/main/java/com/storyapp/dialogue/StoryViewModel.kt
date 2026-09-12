@@ -16,8 +16,26 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import org.json.JSONObject
+import retrofit2.HttpException
 import java.io.File
 import java.io.FileOutputStream
+
+/**
+ * FastAPI error responses are JSON like {"detail": "..."} — Retrofit's
+ * HttpException.message alone is just "HTTP 502" with no useful detail, so
+ * pull the real reason out of the error body when there is one.
+ */
+private fun Throwable.describe(): String {
+    if (this is HttpException) {
+        val body = response()?.errorBody()?.string()
+        val detail = body?.let {
+            runCatching { JSONObject(it).optString("detail") }.getOrNull()
+        }
+        if (!detail.isNullOrBlank()) return detail
+    }
+    return message ?: "Something went wrong"
+}
 
 sealed class UiState {
     data object Idle : UiState()
@@ -86,7 +104,7 @@ class StoryViewModel(application: Application) : AndroidViewModel(application) {
 
                 _uiState.value = UiState.DialogueReady(parsed, audio.clips)
             } catch (t: Throwable) {
-                _uiState.value = UiState.Error(t.message ?: "Something went wrong")
+                _uiState.value = UiState.Error(t.describe())
             }
         }
     }
@@ -119,7 +137,7 @@ class StoryViewModel(application: Application) : AndroidViewModel(application) {
 
                 _uiState.value = UiState.VideoReady(current.parsed, current.clips, file)
             } catch (t: Throwable) {
-                _uiState.value = UiState.Error(t.message ?: "Video generation failed")
+                _uiState.value = UiState.Error(t.describe())
             }
         }
     }

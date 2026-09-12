@@ -90,6 +90,30 @@ Rules:
 """
 
 
+def _extract_json(raw_text: str) -> dict:
+    # Not every model on Groq honors response_format's strict JSON-schema
+    # enforcement equally well (one already outright rejected it as
+    # unparsable), so don't rely on that mode at all - just ask for JSON in
+    # the prompt and parse defensively, tolerant of markdown fences or
+    # leading/trailing prose a model might still add despite instructions.
+    text = raw_text.strip()
+    if text.startswith("```"):
+        text = text.strip("`")
+        if text.startswith("json"):
+            text = text[4:]
+        text = text.strip()
+
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        pass
+
+    start, end = text.find("{"), text.rfind("}")
+    if start != -1 and end != -1 and end > start:
+        return json.loads(text[start : end + 1])
+    raise RuntimeError(f"Groq response was not valid JSON: {raw_text[:500]}")
+
+
 def parse_story(story_text: str, api_key: str) -> ParsedStory:
     if not api_key:
         raise RuntimeError("a Groq API key is required (set it in the app's Settings screen)")
@@ -105,7 +129,6 @@ def parse_story(story_text: str, api_key: str) -> ParsedStory:
                 {"role": "system", "content": _SYSTEM_PROMPT},
                 {"role": "user", "content": story_text},
             ],
-            "response_format": {"type": "json_object"},
             "temperature": 0.4,
         },
         timeout=60.0,
@@ -118,5 +141,5 @@ def parse_story(story_text: str, api_key: str) -> ParsedStory:
             f"Groq API error {response.status_code} (model={model}): {response.text}"
         )
     raw_text = response.json()["choices"][0]["message"]["content"]
-    data = json.loads(raw_text)
+    data = _extract_json(raw_text)
     return ParsedStory.model_validate(data)

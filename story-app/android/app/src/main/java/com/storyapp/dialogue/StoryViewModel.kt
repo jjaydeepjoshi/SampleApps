@@ -46,17 +46,35 @@ sealed class UiState {
 class StoryViewModel(application: Application) : AndroidViewModel(application) {
 
     private val api = StoryApi.create()
+    private val apiKeyStore = ApiKeyStore(application)
     private var mediaPlayer: MediaPlayer? = null
 
     private val _uiState = MutableStateFlow<UiState>(UiState.Idle)
     val uiState: StateFlow<UiState> = _uiState.asStateFlow()
 
+    fun hasGroqKey(): Boolean = apiKeyStore.groqApiKey.isNotBlank()
+
+    fun getGroqKey(): String = apiKeyStore.groqApiKey
+
+    fun getHuggingFaceToken(): String = apiKeyStore.huggingFaceApiToken
+
+    fun saveApiKeys(groqKey: String, huggingFaceToken: String) {
+        apiKeyStore.groqApiKey = groqKey.trim()
+        apiKeyStore.huggingFaceApiToken = huggingFaceToken.trim()
+    }
+
     fun submitStory(storyText: String) {
         if (storyText.isBlank()) return
+        val groqKey = apiKeyStore.groqApiKey
+        if (groqKey.isBlank()) {
+            _uiState.value = UiState.Error("Add your Groq API key in Settings first")
+            return
+        }
+
         viewModelScope.launch {
             try {
                 _uiState.value = UiState.Parsing
-                val parsed = api.parseStory(StoryRequest(storyText))
+                val parsed = api.parseStory(StoryRequest(storyText, groqKey))
 
                 _uiState.value = UiState.GeneratingAudio
                 val audio = api.generateAudio(AudioRequest(parsed))
@@ -72,10 +90,16 @@ class StoryViewModel(application: Application) : AndroidViewModel(application) {
         val current = _uiState.value
         if (current !is UiState.DialogueReady) return
 
+        val hfToken = apiKeyStore.huggingFaceApiToken
+        if (hfToken.isBlank()) {
+            _uiState.value = UiState.Error("Add your Hugging Face API token in Settings first")
+            return
+        }
+
         viewModelScope.launch {
             try {
                 _uiState.value = UiState.GeneratingVideo(current.parsed, current.clips)
-                val video = api.generateVideo(VideoRequest(current.parsed, current.clips))
+                val video = api.generateVideo(VideoRequest(current.parsed, current.clips, hfToken))
 
                 _uiState.value = UiState.AssemblingVideo(current.parsed, current.clips)
                 val finalVideo = api.assembleFinalVideo(

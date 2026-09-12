@@ -30,6 +30,7 @@ class ParsedStory(BaseModel):
 
 class StoryRequest(BaseModel):
     story: str
+    groq_api_key: str
 
 
 class VoiceAssignment(BaseModel):
@@ -62,6 +63,7 @@ class AudioResponse(BaseModel):
 class VideoRequest(BaseModel):
     parsed_story: ParsedStoryWithVoices
     audio_clips: list[AudioClip] = []
+    huggingface_api_token: str
 
 
 class VideoClip(BaseModel):

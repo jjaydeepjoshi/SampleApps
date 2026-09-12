@@ -15,12 +15,20 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -28,6 +36,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.FileProvider
@@ -43,8 +52,97 @@ class MainActivity : ComponentActivity() {
         setContent {
             MaterialTheme {
                 Surface(modifier = Modifier.fillMaxSize()) {
-                    StoryScreen(viewModel)
+                    AppRoot(viewModel)
                 }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun AppRoot(viewModel: StoryViewModel) {
+    // No navigation library needed for two screens — a boolean is enough.
+    var showSettings by remember { mutableStateOf(!viewModel.hasGroqKey()) }
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("Story Dialogue") },
+                actions = {
+                    IconButton(onClick = { showSettings = !showSettings }) {
+                        Icon(Icons.Filled.Settings, contentDescription = "API key settings")
+                    }
+                },
+            )
+        },
+    ) { padding ->
+        Column(modifier = Modifier.padding(padding)) {
+            if (showSettings) {
+                SettingsScreen(
+                    viewModel = viewModel,
+                    onDone = { showSettings = false },
+                )
+            } else {
+                StoryScreen(viewModel)
+            }
+        }
+    }
+}
+
+@Composable
+fun SettingsScreen(viewModel: StoryViewModel, onDone: () -> Unit) {
+    var groqKey by remember { mutableStateOf(viewModel.getGroqKey()) }
+    var hfToken by remember { mutableStateOf(viewModel.getHuggingFaceToken()) }
+
+    Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
+        Text("API keys", style = MaterialTheme.typography.headlineSmall)
+        Text(
+            "Each user brings their own free API keys — nothing is stored on the server, " +
+                "only encrypted on this device.",
+            modifier = Modifier.padding(top = 8.dp, bottom = 16.dp),
+        )
+
+        Text("Groq API key (required)", style = MaterialTheme.typography.titleSmall)
+        Text(
+            "Free, no credit card: console.groq.com/keys",
+            style = MaterialTheme.typography.bodySmall,
+        )
+        OutlinedTextField(
+            value = groqKey,
+            onValueChange = { groqKey = it },
+            modifier = Modifier.fillMaxWidth().padding(top = 4.dp, bottom = 16.dp),
+            singleLine = true,
+            visualTransformation = PasswordVisualTransformation(),
+            label = { Text("gsk_...") },
+        )
+
+        Text("Hugging Face API token (needed for video)", style = MaterialTheme.typography.titleSmall)
+        Text(
+            "Free account: huggingface.co/settings/tokens",
+            style = MaterialTheme.typography.bodySmall,
+        )
+        OutlinedTextField(
+            value = hfToken,
+            onValueChange = { hfToken = it },
+            modifier = Modifier.fillMaxWidth().padding(top = 4.dp, bottom = 16.dp),
+            singleLine = true,
+            visualTransformation = PasswordVisualTransformation(),
+            label = { Text("hf_...") },
+        )
+
+        Button(
+            onClick = {
+                viewModel.saveApiKeys(groqKey, hfToken)
+                onDone()
+            },
+        ) {
+            Text("Save")
+        }
+
+        if (viewModel.hasGroqKey()) {
+            TextButton(onClick = onDone, modifier = Modifier.padding(top = 8.dp)) {
+                Text("Back")
             }
         }
     }
@@ -56,8 +154,6 @@ fun StoryScreen(viewModel: StoryViewModel) {
     var storyText by remember { mutableStateOf("") }
 
     Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
-        Text(text = "Story Dialogue", style = MaterialTheme.typography.headlineSmall)
-
         OutlinedTextField(
             value = storyText,
             onValueChange = { storyText = it },

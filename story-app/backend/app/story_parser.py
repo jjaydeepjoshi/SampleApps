@@ -1,5 +1,4 @@
 import json
-import os
 
 import httpx
 
@@ -44,10 +43,9 @@ Rules:
 """
 
 
-def parse_story(story_text: str) -> ParsedStory:
-    api_key = os.environ.get("GROQ_API_KEY")
+def parse_story(story_text: str, api_key: str) -> ParsedStory:
     if not api_key:
-        raise RuntimeError("GROQ_API_KEY is not set")
+        raise RuntimeError("a Groq API key is required (set it in the app's Settings screen)")
 
     response = httpx.post(
         _GROQ_URL,

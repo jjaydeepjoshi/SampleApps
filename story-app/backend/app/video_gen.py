@@ -69,11 +69,12 @@ def _animate_image(image_path: str, duration_seconds: float, out_path: str) -> N
 
 
 async def generate_scene_videos(
-    parsed: ParsedStoryWithVoices, audio_clips: list[AudioClip]
+    parsed: ParsedStoryWithVoices, audio_clips: list[AudioClip], api_token: str
 ) -> list[VideoClip]:
-    api_token = os.environ.get("HUGGINGFACE_API_TOKEN")
     if not api_token:
-        raise RuntimeError("HUGGINGFACE_API_TOKEN is not set")
+        raise RuntimeError(
+            "a Hugging Face API token is required (set it in the app's Settings screen)"
+        )
 
     characters_by_name = {c.name: c for c in parsed.characters}
     clips: list[VideoClip] = []

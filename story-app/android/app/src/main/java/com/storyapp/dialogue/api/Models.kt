@@ -1,6 +1,9 @@
 package com.storyapp.dialogue.api
 
-data class StoryRequest(val story: String)
+data class StoryRequest(
+    val story: String,
+    val groq_api_key: String,
+)
 
 data class Character(
     val name: String,
@@ -50,6 +53,7 @@ data class AudioResponse(val clips: List<AudioClip>)
 data class VideoRequest(
     val parsed_story: ParsedStoryWithVoices,
     val audio_clips: List<AudioClip>,
+    val huggingface_api_token: String,
 )
 
 data class VideoClip(

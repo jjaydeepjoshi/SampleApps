@@ -1,16 +1,17 @@
 # Story Dialogue App
 
-Full scaffold of the story → AI video pipeline: parse a story into
-characters/scenes/dialogue, assign each character a voice, generate
-per-line dialogue audio, generate an AI video clip per scene, and mux it
-all into one final video.
+Full scaffold of the story → AI video pipeline, built entirely on free
+services: parse a story into characters/scenes/dialogue, assign each
+character a voice, generate per-line dialogue audio, generate an AI video
+clip per scene, and mux it all into one final video.
 
-- `backend/` — FastAPI service: Claude-based story parsing, voice assignment,
-  ElevenLabs TTS, Runway scene video generation, ffmpeg assembly. See
-  `backend/README.md` for setup.
-- `android/` — Kotlin/Jetpack Compose app: paste a story, hit the backend,
-  see the extracted characters, play each line of generated dialogue, then
-  generate and play the final assembled video.
+- `backend/` — FastAPI service: Groq-based story parsing, free Edge-TTS
+  voices, Hugging Face scene images animated via ffmpeg, ffmpeg assembly.
+  Holds no API keys itself — see `backend/README.md`.
+- `android/` — Kotlin/Jetpack Compose app: each user enters their own free
+  Groq/Hugging Face API keys in the Settings screen (encrypted on-device),
+  then pastes a story, sees the extracted characters, plays each line of
+  dialogue, and generates/plays the final assembled video.
 
 ## Running locally
 
@@ -19,3 +20,6 @@ all into one final video.
    to hit `http://10.0.2.2:8000/` (the host machine's localhost from the
    emulator). For a physical device, change `API_BASE_URL` in
    `android/app/build.gradle.kts` to your machine's LAN IP.
+3. On first launch, the app opens straight to Settings — get a free Groq key
+   (https://console.groq.com/keys) and, for video, a free Hugging Face token
+   (https://huggingface.co/settings/tokens), paste them in, and Save.

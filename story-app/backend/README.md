@@ -25,24 +25,33 @@ required):
 cd story-app/backend
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
-cp .env.example .env  # fill in GROQ_API_KEY and HUGGINGFACE_API_TOKEN (both free)
 uvicorn app.main:app --reload
 ```
 
 `ffmpeg` (with `ffprobe`) must also be installed and on `PATH`
 (`apt install ffmpeg` / `brew install ffmpeg`).
 
-### Getting free API keys
+### API keys: bring-your-own, per user, from the app
 
-- **Groq** (story parsing): sign up at https://console.groq.com/keys — free tier, no credit card.
-- **Hugging Face** (scene images): sign up at https://huggingface.co — free account, create a token at https://huggingface.co/settings/tokens. The free Inference API has rate limits and a cold-start delay per model, but no cost.
+This backend holds **no API keys of its own** — it's a shared/multi-tenant
+service. Every caller (the Android app) supplies their own free Groq API key
+and Hugging Face token with each request, and the backend just forwards them
+to the respective free API. This means:
+
+- Each user signs up for their own free Groq/Hugging Face account in the app's
+  Settings screen — no shared secret to manage or leak on the server.
+- `/parse-story` requires `groq_api_key` in the request body.
+- `/generate-video` requires `huggingface_api_token` in the request body.
 - Dialogue voices need no key at all (`edge-tts` is free and keyless).
+
+Getting the free keys: Groq at https://console.groq.com/keys (no credit
+card), Hugging Face at https://huggingface.co/settings/tokens (free account).
 
 ## Endpoints
 
-- `POST /parse-story` — `{"story": "..."}` → characters, scenes, dialogue, voice assignments
+- `POST /parse-story` — `{"story": "...", "groq_api_key": "..."}` → characters, scenes, dialogue, voice assignments
 - `POST /generate-audio` — `{"parsed_story": <output of /parse-story>}` → base64 audio clips per line
-- `POST /generate-video` — `{"parsed_story": ..., "audio_clips": [...]}` → base64 video clip per scene, timed to match that scene's dialogue
+- `POST /generate-video` — `{"parsed_story": ..., "audio_clips": [...], "huggingface_api_token": "..."}` → base64 video clip per scene, timed to match that scene's dialogue
 - `POST /assemble-final-video` — `{"video_clips": [...], "audio_clips": [...]}` → base64 final MP4
 - `GET /health`
 

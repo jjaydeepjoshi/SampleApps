@@ -1,6 +1,5 @@
 import base64
 
-from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -20,8 +19,6 @@ from .tts import generate_dialogue_audio
 from .video_gen import generate_scene_videos
 from .voice_assignment import assign_voices
 
-load_dotenv()
-
 app = FastAPI(title="Story Dialogue API")
 
 app.add_middleware(
@@ -36,8 +33,10 @@ app.add_middleware(
 def parse_story_endpoint(request: StoryRequest) -> ParsedStoryWithVoices:
     if not request.story.strip():
         raise HTTPException(status_code=400, detail="story text is required")
+    if not request.groq_api_key.strip():
+        raise HTTPException(status_code=400, detail="groq_api_key is required")
     try:
-        parsed = parse_story(request.story)
+        parsed = parse_story(request.story, request.groq_api_key)
     except Exception as exc:  # noqa: BLE001 - surfaced to the client
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     return assign_voices(parsed)
@@ -54,8 +53,12 @@ async def generate_audio_endpoint(request: AudioRequest) -> AudioResponse:
 
 @app.post("/generate-video", response_model=VideoResponse)
 async def generate_video_endpoint(request: VideoRequest) -> VideoResponse:
+    if not request.huggingface_api_token.strip():
+        raise HTTPException(status_code=400, detail="huggingface_api_token is required")
     try:
-        clips = await generate_scene_videos(request.parsed_story, request.audio_clips)
+        clips = await generate_scene_videos(
+            request.parsed_story, request.audio_clips, request.huggingface_api_token
+        )
     except Exception as exc:  # noqa: BLE001 - surfaced to the client
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     return VideoResponse(clips=clips)

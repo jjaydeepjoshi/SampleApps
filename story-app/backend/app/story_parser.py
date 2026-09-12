@@ -6,13 +6,47 @@ import httpx
 from .models import ParsedStory
 
 # Groq offers a free API tier (no credit card required) serving open models
-# at very low latency. Get a free key at console.groq.com. Groq periodically
-# retires older model IDs (this broke once already - llama-3.3-70b-versatile
-# was decommissioned), so the model is overridable via GROQ_MODEL without a
-# code change/redeploy if it happens again; check the current list with
-# `curl -H "Authorization: Bearer $GROQ_API_KEY" https://api.groq.com/openai/v1/models`.
-_GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
-_GROQ_MODEL = os.environ.get("GROQ_MODEL", "llama-3.1-8b-instant")
+# at very low latency. Get a free key at console.groq.com. Groq's available
+# model catalog changes over time/per-account (hardcoding one broke twice
+# during development with "model_not_found"), so instead of guessing a fixed
+# model ID, ask the key's own /models list what it actually has access to
+# and pick the best match from there. GROQ_MODEL still forces a specific
+# choice if set, skipping the discovery call.
+_GROQ_BASE_URL = "https://api.groq.com/openai/v1"
+_PREFERRED_MODELS = [
+    "llama-3.3-70b-versatile",
+    "llama-3.1-70b-versatile",
+    "llama-3.1-8b-instant",
+    "llama3-70b-8192",
+    "llama3-8b-8192",
+    "mixtral-8x7b-32768",
+    "gemma2-9b-it",
+]
+
+
+def _resolve_model(api_key: str) -> str:
+    forced = os.environ.get("GROQ_MODEL")
+    if forced:
+        return forced
+
+    response = httpx.get(
+        f"{_GROQ_BASE_URL}/models",
+        headers={"Authorization": f"Bearer {api_key}"},
+        timeout=30.0,
+    )
+    if response.status_code >= 400:
+        raise RuntimeError(
+            f"Groq API error {response.status_code} listing models: {response.text}"
+        )
+    available = [m["id"] for m in response.json().get("data", [])]
+    if not available:
+        raise RuntimeError("Groq API key has no available chat models")
+
+    for candidate in _PREFERRED_MODELS:
+        if candidate in available:
+            return candidate
+    return available[0]
+
 
 _SYSTEM_PROMPT = """You convert a short story into structured JSON for a dialogue/video pipeline.
 
@@ -60,11 +94,13 @@ def parse_story(story_text: str, api_key: str) -> ParsedStory:
     if not api_key:
         raise RuntimeError("a Groq API key is required (set it in the app's Settings screen)")
 
+    model = _resolve_model(api_key)
+
     response = httpx.post(
-        _GROQ_URL,
+        f"{_GROQ_BASE_URL}/chat/completions",
         headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
         json={
-            "model": _GROQ_MODEL,
+            "model": model,
             "messages": [
                 {"role": "system", "content": _SYSTEM_PROMPT},
                 {"role": "user", "content": story_text},
@@ -78,7 +114,9 @@ def parse_story(story_text: str, api_key: str) -> ParsedStory:
         # httpx's default raise_for_status() message drops the response body,
         # which is where Groq actually explains what went wrong (bad key,
         # decommissioned model, etc.) - surface that instead of a bare status.
-        raise RuntimeError(f"Groq API error {response.status_code}: {response.text}")
+        raise RuntimeError(
+            f"Groq API error {response.status_code} (model={model}): {response.text}"
+        )
     raw_text = response.json()["choices"][0]["message"]["content"]
     data = json.loads(raw_text)
     return ParsedStory.model_validate(data)

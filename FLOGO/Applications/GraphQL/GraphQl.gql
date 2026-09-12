@@ -1,0 +1,23 @@
+enum Episode { NEWHOPE, EMPIRE, JEDI }
+interface Character {
+  id: String!
+  name: String
+  appearsIn: [Episode]
+  friends: [Character]
+}
+type Human implements Character {
+  id: String!
+  name: String
+  friends: [Character]
+  appearsIn: [Episode]
+  homePlanet: String
+}
+input CharacterReview {
+  id: String!
+    rating: Int
+    comment: String
+}
+type Query {
+  "Get human details"
+  human("The id of Human." id: String! = "dummy"): Human
+}

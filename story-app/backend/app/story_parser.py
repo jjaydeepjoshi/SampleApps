@@ -1,5 +1,6 @@
 import json
 import os
+import re
 
 import httpx
 from json_repair import repair_json
@@ -23,6 +24,16 @@ _PREFERRED_MODELS = [
     "mixtral-8x7b-32768",
     "gemma2-9b-it",
 ]
+# Groq's /models list mixes chat-completion models in with audio (TTS/STT),
+# moderation, and other non-chat model types - picking blindly from it once
+# returned an actual text-to-speech model. Exclude anything matching these
+# known non-chat naming patterns before considering a model as a candidate.
+_NON_CHAT_HINTS = ("whisper", "tts", "orpheus", "guard", "moderation", "playai")
+# Prefer well-known plain (non chain-of-thought) chat model families when
+# nothing on the preferred list matches, since a reasoning/"thinking" model
+# needs special handling (see _extract_json) and more tokens for the same
+# answer - fine as a fallback, just not the first choice among unknowns.
+_CHAT_FAMILY_HINTS = ("llama", "gpt", "gemma", "mixtral", "deepseek", "qwen", "kimi")
 
 
 def _resolve_model(api_key: str) -> str:
@@ -43,10 +54,19 @@ def _resolve_model(api_key: str) -> str:
     if not available:
         raise RuntimeError("Groq API key has no available chat models")
 
+    chat_candidates = [
+        m for m in available if not any(hint in m.lower() for hint in _NON_CHAT_HINTS)
+    ] or available
+
     for candidate in _PREFERRED_MODELS:
-        if candidate in available:
+        if candidate in chat_candidates:
             return candidate
-    return available[0]
+
+    for candidate in chat_candidates:
+        if any(hint in candidate.lower() for hint in _CHAT_FAMILY_HINTS):
+            return candidate
+
+    return chat_candidates[0]
 
 
 _SYSTEM_PROMPT = """You convert a short story into structured JSON for a dialogue/video pipeline.
@@ -97,7 +117,21 @@ def _extract_json(raw_text: str) -> dict:
     # unparsable), so don't rely on that mode at all - just ask for JSON in
     # the prompt and parse defensively, tolerant of markdown fences or
     # leading/trailing prose a model might still add despite instructions.
+    #
+    # Reasoning models (one got auto-selected in testing: qwen/qwen3.6-27b)
+    # emit a <think>...</think> chain-of-thought block before their real
+    # answer. Strip a *closed* block outright; an unclosed one means the
+    # response got cut off mid-thought before ever reaching the JSON, which
+    # a bigger max_tokens (set on the request) should prevent going forward
+    # - but if it still happens, there is no JSON left to recover here.
     text = raw_text.strip()
+    if "<think>" in text and "</think>" not in text:
+        raise RuntimeError(
+            "Groq response was cut off mid-reasoning before producing any JSON "
+            f"(response was truncated): {raw_text[:500]}"
+        )
+    text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()
+
     if text.startswith("```"):
         text = text.strip("`")
         if text.startswith("json"):
@@ -146,8 +180,12 @@ def parse_story(story_text: str, api_key: str) -> ParsedStory:
                 {"role": "user", "content": story_text},
             ],
             "temperature": 0.4,
+            # Generous headroom: a reasoning model's <think> block alone can
+            # run to several thousand tokens before it even starts the
+            # actual JSON answer.
+            "max_tokens": 8192,
         },
-        timeout=60.0,
+        timeout=90.0,
     )
     if response.status_code >= 400:
         # httpx's default raise_for_status() message drops the response body,

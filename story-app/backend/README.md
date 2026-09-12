@@ -22,7 +22,7 @@ required):
    audio onto its animated clip and concatenates all scenes into one final
    MP4 via `ffmpeg`.
 
-## Setup
+## Setup: running on your own computer
 
 ```bash
 cd story-app/backend
@@ -33,8 +33,6 @@ uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 
 `ffmpeg` (with `ffprobe`) must also be installed and on `PATH`
 (`apt install ffmpeg` / `brew install ffmpeg`).
-
-### Connecting from a real phone (not an emulator)
 
 `--host 0.0.0.0` is required — without it, uvicorn only accepts connections
 from `localhost` and a phone on the same Wi-Fi can't reach it at all. Then:
@@ -47,6 +45,30 @@ from `localhost` and a phone on the same Wi-Fi can't reach it at all. Then:
    Android Emulator).
 4. Check your computer's firewall isn't blocking incoming connections on
    port 8000.
+
+## Setup: hosting it for free (no computer needed)
+
+If you're only on a phone with no computer to run the backend on, deploy it
+to a free always-on-the-internet host instead — the app then talks to a
+public URL rather than a LAN IP.
+
+**Render.com (recommended, free tier, no credit card):**
+
+1. Sign up at https://render.com (can connect directly with GitHub).
+2. New → **Blueprint** → pick this repo. Render reads `story-app/render.yaml`
+   automatically and builds `story-app/backend/Dockerfile` (which already
+   installs `ffmpeg`).
+3. Deploy. You'll get a URL like `https://story-dialogue-backend-xxxx.onrender.com`.
+4. In the app's Settings screen, set the backend URL to that URL with a
+   trailing slash, e.g. `https://story-dialogue-backend-xxxx.onrender.com/`.
+
+Notes:
+- Render's free tier spins the service down after ~15 minutes idle. The
+  first request after that can take 30-60s to wake it back up — the app's
+  network timeout is generous (10 minutes) specifically to survive this,
+  so just wait on the first request after a period of inactivity.
+- Any other host that runs a Dockerfile (Fly.io, Railway, etc.) works the
+  same way — point it at `story-app/backend/Dockerfile`.
 
 ### API keys: bring-your-own, per user, from the app
 

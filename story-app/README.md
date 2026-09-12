@@ -1,16 +1,16 @@
 # Story Dialogue App
 
-Scaffold for steps 1–3 of the story → AI video pipeline (see planning
-discussion): parse a story into characters/scenes/dialogue, assign each
-character a voice, and generate per-line dialogue audio.
+Full scaffold of the story → AI video pipeline: parse a story into
+characters/scenes/dialogue, assign each character a voice, generate
+per-line dialogue audio, generate an AI video clip per scene, and mux it
+all into one final video.
 
 - `backend/` — FastAPI service: Claude-based story parsing, voice assignment,
-  ElevenLabs TTS. See `backend/README.md` for setup.
+  ElevenLabs TTS, Runway scene video generation, ffmpeg assembly. See
+  `backend/README.md` for setup.
 - `android/` — Kotlin/Jetpack Compose app: paste a story, hit the backend,
-  see the extracted characters, and play each line of generated dialogue.
-
-Video generation (turning scenes into AI-generated clips) is not built yet —
-that's the next milestone once this dialogue pipeline is verified end to end.
+  see the extracted characters, play each line of generated dialogue, then
+  generate and play the final assembled video.
 
 ## Running locally
 

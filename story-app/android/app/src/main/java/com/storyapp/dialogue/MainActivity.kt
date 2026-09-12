@@ -1,6 +1,9 @@
 package com.storyapp.dialogue
 
+import android.net.Uri
 import android.os.Bundle
+import android.widget.MediaController
+import android.widget.VideoView
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.viewModels
@@ -26,8 +29,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.core.content.FileProvider
 import com.storyapp.dialogue.api.AudioClip
 import com.storyapp.dialogue.api.ParsedStoryWithVoices
+import java.io.File
 
 class MainActivity : ComponentActivity() {
     private val viewModel: StoryViewModel by viewModels()
@@ -70,16 +76,39 @@ fun StoryScreen(viewModel: StoryViewModel) {
             is UiState.Idle -> Unit
             is UiState.Parsing -> LoadingRow("Understanding the story...")
             is UiState.GeneratingAudio -> LoadingRow("Generating character voices...")
+            is UiState.GeneratingVideo -> LoadingRow("Generating scene videos...")
+            is UiState.AssemblingVideo -> LoadingRow("Assembling final video...")
             is UiState.Error -> Text(
                 text = "Error: ${current.message}",
                 color = MaterialTheme.colorScheme.error,
                 modifier = Modifier.padding(top = 12.dp),
             )
-            is UiState.Ready -> ResultList(
-                parsed = current.parsed,
-                clips = current.clips,
-                onPlay = viewModel::playClip,
-            )
+            is UiState.DialogueReady -> Column {
+                ResultList(
+                    parsed = current.parsed,
+                    clips = current.clips,
+                    onPlay = viewModel::playClip,
+                )
+                Button(
+                    onClick = { viewModel.generateVideo() },
+                    modifier = Modifier.padding(top = 12.dp),
+                ) {
+                    Text("Generate video")
+                }
+            }
+            is UiState.VideoReady -> Column {
+                ResultList(
+                    parsed = current.parsed,
+                    clips = current.clips,
+                    onPlay = viewModel::playClip,
+                )
+                Text(
+                    "Final video",
+                    style = MaterialTheme.typography.titleMedium,
+                    modifier = Modifier.padding(top = 16.dp),
+                )
+                VideoPlayer(current.videoFile)
+            }
         }
     }
 }
@@ -125,4 +154,21 @@ fun ResultList(
             }
         }
     }
+}
+
+@Composable
+fun VideoPlayer(videoFile: File) {
+    AndroidView(
+        modifier = Modifier.fillMaxWidth().height(220.dp),
+        factory = { context ->
+            VideoView(context).apply {
+                val uri: Uri = FileProvider.getUriForFile(
+                    context, "${context.packageName}.fileprovider", videoFile
+                )
+                setVideoURI(uri)
+                setMediaController(MediaController(context).also { it.setAnchorView(this) })
+                setOnPreparedListener { start() }
+            }
+        },
+    )
 }

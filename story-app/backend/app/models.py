@@ -57,3 +57,26 @@ class AudioClip(BaseModel):
 
 class AudioResponse(BaseModel):
     clips: list[AudioClip]
+
+
+class VideoRequest(BaseModel):
+    parsed_story: ParsedStoryWithVoices
+
+
+class VideoClip(BaseModel):
+    scene_id: int
+    prompt: str
+    video_base64: str
+
+
+class VideoResponse(BaseModel):
+    clips: list[VideoClip]
+
+
+class FinalVideoRequest(BaseModel):
+    video_clips: list[VideoClip]
+    audio_clips: list[AudioClip]
+
+
+class FinalVideoResponse(BaseModel):
+    video_base64: str

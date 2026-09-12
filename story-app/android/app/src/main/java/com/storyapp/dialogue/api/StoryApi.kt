@@ -16,6 +16,12 @@ interface StoryApi {
     @POST("generate-audio")
     suspend fun generateAudio(@Body request: AudioRequest): AudioResponse
 
+    @POST("generate-video")
+    suspend fun generateVideo(@Body request: VideoRequest): VideoResponse
+
+    @POST("assemble-final-video")
+    suspend fun assembleFinalVideo(@Body request: FinalVideoRequest): FinalVideoResponse
+
     companion object {
         fun create(): StoryApi {
             val logging = HttpLoggingInterceptor().apply {
@@ -24,7 +30,9 @@ interface StoryApi {
             val client = OkHttpClient.Builder()
                 .addInterceptor(logging)
                 .connectTimeout(30, TimeUnit.SECONDS)
-                .readTimeout(120, TimeUnit.SECONDS)
+                // Video generation polls a slow third-party API server-side before
+                // responding, so this needs much more headroom than the audio calls.
+                .readTimeout(10, TimeUnit.MINUTES)
                 .build()
 
             return Retrofit.Builder()

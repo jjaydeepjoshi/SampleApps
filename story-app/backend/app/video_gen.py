@@ -121,7 +121,16 @@ async def generate_scene_videos(
     clips: list[VideoClip] = []
 
     with tempfile.TemporaryDirectory() as tmp:
-        async with httpx.AsyncClient() as client:
+        # Real test: DNS resolution for BOTH known Hugging Face hostnames
+        # failed identically even across retries - "[Errno -5] No address
+        # associated with hostname" persisting like that (not transient)
+        # points to a broken IPv6 stack in the container (DNS returns an
+        # AAAA record with no usable route) rather than either host being
+        # genuinely unreachable. Binding the local address to an IPv4
+        # literal forces httpx/httpcore to resolve and connect over IPv4
+        # only, which is the standard workaround for this failure mode.
+        transport = httpx.AsyncHTTPTransport(local_address="0.0.0.0")
+        async with httpx.AsyncClient(transport=transport) as client:
             for scene in parsed.scenes:
                 prompt = _scene_prompt(scene, characters_by_name)
                 image_bytes = await _generate_scene_image(client, api_token, prompt)

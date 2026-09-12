@@ -33,6 +33,7 @@ data class VoiceAssignment(
 )
 
 data class ParsedStoryWithVoices(
+    val language: String,
     val characters: List<Character>,
     val scenes: List<Scene>,
     val voice_assignments: List<VoiceAssignment>,

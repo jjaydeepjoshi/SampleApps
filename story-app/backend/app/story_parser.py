@@ -13,6 +13,7 @@ _SYSTEM_PROMPT = """You convert a short story into structured JSON for a dialogu
 
 Return ONLY valid JSON matching this shape, no prose, no markdown fences:
 {
+  "language": string (BCP-47 code of the story's own language, e.g. "hi" for Hindi, "en" for English),
   "characters": [
     {
       "name": string,
@@ -36,9 +37,16 @@ Return ONLY valid JSON matching this shape, no prose, no markdown fences:
 }
 
 Rules:
+- Detect the language the story itself is written in and set "language" to it.
+- Write every "name", "description", "personality", "setting", scene "description",
+  and dialogue "line" in that SAME language as the input story. Do not translate
+  to English or any other language, and do not transliterate — if the story is in
+  Hindi (Devanagari), keep names and dialogue in Hindi (Devanagari) script.
 - Only include characters who actually speak or are clearly named.
 - Split the story into scenes by location/time changes.
-- Infer emotion per line from context (e.g. "angry", "sad", "excited", "neutral").
+- Infer emotion per line from context (e.g. "angry", "sad", "excited", "neutral");
+  the emotion label itself should stay in English regardless of story language,
+  since it drives voice/prosody settings, not narration.
 - Keep descriptions concise (1-2 sentences).
 """
 

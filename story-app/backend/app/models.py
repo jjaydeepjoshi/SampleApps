@@ -24,6 +24,7 @@ class Character(BaseModel):
 
 
 class ParsedStory(BaseModel):
+    language: str
     characters: list[Character]
     scenes: list[Scene]
 
@@ -39,6 +40,7 @@ class VoiceAssignment(BaseModel):
 
 
 class ParsedStoryWithVoices(BaseModel):
+    language: str
     characters: list[Character]
     scenes: list[Scene]
     voice_assignments: list[VoiceAssignment]

@@ -45,8 +45,8 @@ sealed class UiState {
 
 class StoryViewModel(application: Application) : AndroidViewModel(application) {
 
-    private val api = StoryApi.create()
     private val apiKeyStore = ApiKeyStore(application)
+    private var api = StoryApi.create(apiKeyStore.backendUrl)
     private var mediaPlayer: MediaPlayer? = null
 
     private val _uiState = MutableStateFlow<UiState>(UiState.Idle)
@@ -58,9 +58,14 @@ class StoryViewModel(application: Application) : AndroidViewModel(application) {
 
     fun getHuggingFaceToken(): String = apiKeyStore.huggingFaceApiToken
 
-    fun saveApiKeys(groqKey: String, huggingFaceToken: String) {
+    fun getBackendUrl(): String = apiKeyStore.backendUrl
+
+    fun saveSettings(groqKey: String, huggingFaceToken: String, backendUrl: String) {
         apiKeyStore.groqApiKey = groqKey.trim()
         apiKeyStore.huggingFaceApiToken = huggingFaceToken.trim()
+        val trimmedUrl = backendUrl.trim()
+        apiKeyStore.backendUrl = trimmedUrl.ifBlank { ApiKeyStore.DEFAULT_BACKEND_URL }
+        api = StoryApi.create(apiKeyStore.backendUrl)
     }
 
     fun submitStory(storyText: String) {

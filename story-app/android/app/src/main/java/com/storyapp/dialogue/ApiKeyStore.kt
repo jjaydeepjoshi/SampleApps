@@ -33,11 +33,20 @@ class ApiKeyStore(context: Context) {
         get() = prefs.getString(KEY_HUGGINGFACE, "") ?: ""
         set(value) = prefs.edit().putString(KEY_HUGGINGFACE, value).apply()
 
+    // Defaults to the emulator-only loopback alias. A real device has no
+    // "10.0.2.2" — it needs the backend host's actual LAN IP (or a public
+    // URL), so this is user-editable instead of a build-time constant.
+    var backendUrl: String
+        get() = prefs.getString(KEY_BACKEND_URL, DEFAULT_BACKEND_URL) ?: DEFAULT_BACKEND_URL
+        set(value) = prefs.edit().putString(KEY_BACKEND_URL, value).apply()
+
     val hasRequiredKeys: Boolean
         get() = groqApiKey.isNotBlank()
 
     companion object {
         private const val KEY_GROQ = "groq_api_key"
         private const val KEY_HUGGINGFACE = "huggingface_api_token"
+        private const val KEY_BACKEND_URL = "backend_url"
+        const val DEFAULT_BACKEND_URL = "http://10.0.2.2:8000/"
     }
 }

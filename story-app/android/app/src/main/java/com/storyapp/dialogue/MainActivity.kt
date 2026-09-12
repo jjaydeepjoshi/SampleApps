@@ -94,13 +94,29 @@ fun AppRoot(viewModel: StoryViewModel) {
 fun SettingsScreen(viewModel: StoryViewModel, onDone: () -> Unit) {
     var groqKey by remember { mutableStateOf(viewModel.getGroqKey()) }
     var hfToken by remember { mutableStateOf(viewModel.getHuggingFaceToken()) }
+    var backendUrl by remember { mutableStateOf(viewModel.getBackendUrl()) }
 
     Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
-        Text("API keys", style = MaterialTheme.typography.headlineSmall)
+        Text("Settings", style = MaterialTheme.typography.headlineSmall)
         Text(
             "Each user brings their own free API keys — nothing is stored on the server, " +
                 "only encrypted on this device.",
             modifier = Modifier.padding(top = 8.dp, bottom = 16.dp),
+        )
+
+        Text("Backend URL", style = MaterialTheme.typography.titleSmall)
+        Text(
+            "On a real phone, \"10.0.2.2\" only works in an emulator — use your " +
+                "computer's LAN IP instead (e.g. http://192.168.1.23:8000/), and make " +
+                "sure your phone is on the same Wi-Fi as the backend.",
+            style = MaterialTheme.typography.bodySmall,
+        )
+        OutlinedTextField(
+            value = backendUrl,
+            onValueChange = { backendUrl = it },
+            modifier = Modifier.fillMaxWidth().padding(top = 4.dp, bottom = 16.dp),
+            singleLine = true,
+            label = { Text("http://<ip>:8000/") },
         )
 
         Text("Groq API key (required)", style = MaterialTheme.typography.titleSmall)
@@ -133,7 +149,7 @@ fun SettingsScreen(viewModel: StoryViewModel, onDone: () -> Unit) {
 
         Button(
             onClick = {
-                viewModel.saveApiKeys(groqKey, hfToken)
+                viewModel.saveSettings(groqKey, hfToken, backendUrl)
                 onDone()
             },
         ) {

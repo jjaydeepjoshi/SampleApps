@@ -1,6 +1,5 @@
 package com.storyapp.dialogue.api
 
-import com.storyapp.dialogue.BuildConfig
 import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Retrofit
@@ -23,7 +22,7 @@ interface StoryApi {
     suspend fun assembleFinalVideo(@Body request: FinalVideoRequest): FinalVideoResponse
 
     companion object {
-        fun create(): StoryApi {
+        fun create(baseUrl: String): StoryApi {
             val logging = HttpLoggingInterceptor().apply {
                 level = HttpLoggingInterceptor.Level.BASIC
             }
@@ -35,8 +34,11 @@ interface StoryApi {
                 .readTimeout(10, TimeUnit.MINUTES)
                 .build()
 
+            // Retrofit requires a trailing slash on the base URL.
+            val normalizedUrl = if (baseUrl.endsWith("/")) baseUrl else "$baseUrl/"
+
             return Retrofit.Builder()
-                .baseUrl(BuildConfig.API_BASE_URL)
+                .baseUrl(normalizedUrl)
                 .client(client)
                 .addConverterFactory(GsonConverterFactory.create())
                 .build()

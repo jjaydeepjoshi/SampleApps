@@ -13,9 +13,6 @@ android {
         targetSdk = 34
         versionCode = 1
         versionName = "1.0"
-
-        // Point this at your backend (10.0.2.2 = host machine from the emulator).
-        buildConfigField("String", "API_BASE_URL", "\"http://10.0.2.2:8000/\"")
     }
 
     signingConfigs {

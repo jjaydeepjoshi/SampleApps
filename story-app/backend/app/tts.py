@@ -1,70 +1,72 @@
 import base64
+import json
 import os
+import subprocess
+import tempfile
 
-import httpx
+import edge_tts
 
 from .models import AudioClip, ParsedStoryWithVoices
 
-_ELEVENLABS_URL = "https://api.elevenlabs.io/v1/text-to-speech/{voice_id}"
-
-_EMOTION_STABILITY = {
-    "angry": 0.3,
-    "sad": 0.4,
-    "excited": 0.25,
-    "neutral": 0.5,
+# edge-tts is Microsoft Edge's free, keyless text-to-speech service. It has no
+# per-emotion control, so emotion is approximated with rate/pitch tweaks.
+_EMOTION_PROSODY = {
+    "angry": ("+15%", "+20Hz"),
+    "sad": ("-15%", "-20Hz"),
+    "excited": ("+20%", "+15Hz"),
+    "scared": ("+10%", "+30Hz"),
+    "neutral": ("+0%", "+0Hz"),
 }
 
 
-def _stability_for(emotion: str) -> float:
-    return _EMOTION_STABILITY.get(emotion.lower(), 0.45)
+def _prosody_for(emotion: str) -> tuple[str, str]:
+    return _EMOTION_PROSODY.get(emotion.lower(), ("+0%", "+0Hz"))
 
 
-async def _synthesize_line(
-    client: httpx.AsyncClient, api_key: str, voice_id: str, text: str, emotion: str
-) -> bytes:
-    response = await client.post(
-        _ELEVENLABS_URL.format(voice_id=voice_id),
-        headers={"xi-api-key": api_key, "Content-Type": "application/json"},
-        json={
-            "text": text,
-            "model_id": "eleven_multilingual_v2",
-            "voice_settings": {
-                "stability": _stability_for(emotion),
-                "similarity_boost": 0.75,
-            },
-        },
-        timeout=60.0,
+def _probe_duration_seconds(path: str) -> float:
+    result = subprocess.run(
+        [
+            "ffprobe", "-v", "error",
+            "-show_entries", "format=duration",
+            "-of", "json",
+            path,
+        ],
+        capture_output=True,
+        text=True,
+        check=True,
     )
-    response.raise_for_status()
-    return response.content
+    return float(json.loads(result.stdout)["format"]["duration"])
+
+
+async def _synthesize_line(voice_id: str, text: str, emotion: str, out_path: str) -> None:
+    rate, pitch = _prosody_for(emotion)
+    communicate = edge_tts.Communicate(text, voice=voice_id, rate=rate, pitch=pitch)
+    await communicate.save(out_path)
 
 
 async def generate_dialogue_audio(parsed: ParsedStoryWithVoices) -> list[AudioClip]:
-    api_key = os.environ.get("ELEVENLABS_API_KEY")
-    if not api_key:
-        raise RuntimeError("ELEVENLABS_API_KEY is not set")
-
     voice_by_character = {va.character: va.voice_id for va in parsed.voice_assignments}
     clips: list[AudioClip] = []
 
-    async with httpx.AsyncClient() as client:
+    with tempfile.TemporaryDirectory() as tmp:
         for scene in parsed.scenes:
-            for line in scene.dialogue:
+            for i, line in enumerate(scene.dialogue):
                 voice_id = voice_by_character.get(line.speaker)
                 if not voice_id:
                     continue
-                audio_bytes = await _synthesize_line(
-                    client, api_key, voice_id, line.line, line.emotion
-                )
+                out_path = os.path.join(tmp, f"scene_{scene.id}_line_{i}.mp3")
+                await _synthesize_line(voice_id, line.line, line.emotion, out_path)
+
+                with open(out_path, "rb") as f:
+                    audio_bytes = f.read()
+
                 clips.append(
                     AudioClip(
                         scene_id=scene.id,
                         speaker=line.speaker,
                         line=line.line,
                         audio_base64=base64.b64encode(audio_bytes).decode("ascii"),
-                        # Placeholder estimate; replace with real duration from
-                        # audio metadata once you decode the returned MP3/WAV.
-                        duration_seconds=max(1.0, len(line.line.split()) / 2.5),
+                        duration_seconds=_probe_duration_seconds(out_path),
                     )
                 )
     return clips

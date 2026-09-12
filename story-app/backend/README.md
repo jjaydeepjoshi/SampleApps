@@ -1,19 +1,22 @@
 # Story Dialogue Backend
 
-Full story-to-video pipeline:
+Full story-to-video pipeline, built entirely on free services (no paid API
+required):
 
-1. **Story parsing** (`app/story_parser.py`) — sends the story to Claude, gets
-   back structured JSON: characters, scenes, and per-line dialogue with
-   inferred emotion.
+1. **Story parsing** (`app/story_parser.py`) — sends the story to Groq's free
+   API (Llama 3.3), gets back structured JSON: characters, scenes, and
+   per-line dialogue with inferred emotion.
 2. **Voice assignment** (`app/voice_assignment.py`) — maps each character to a
-   TTS voice based on inferred gender/age.
-3. **Dialogue audio generation** (`app/tts.py`) — calls ElevenLabs per
-   dialogue line and returns base64-encoded audio clips.
-4. **Scene video generation** (`app/video_gen.py`) — builds a text-to-video
-   prompt per scene (setting + description + characters present) and calls
-   Runway's API, polling until each clip is ready.
+   free Microsoft Edge neural voice based on inferred gender/age.
+3. **Dialogue audio generation** (`app/tts.py`) — uses `edge-tts` (free,
+   keyless) to synthesize each dialogue line, approximating emotion via
+   rate/pitch, and measures real duration with `ffprobe`.
+4. **Scene video generation** (`app/video_gen.py`) — generates one still
+   image per scene from Hugging Face's free Inference API (Stable Diffusion
+   2.1), then animates it with an `ffmpeg` Ken Burns pan/zoom, timed to match
+   that scene's total dialogue duration.
 5. **Final video assembly** (`app/assembly.py`) — muxes each scene's dialogue
-   audio onto its generated clip and concatenates all scenes into one final
+   audio onto its animated clip and concatenates all scenes into one final
    MP4 via `ffmpeg`.
 
 ## Setup
@@ -22,33 +25,30 @@ Full story-to-video pipeline:
 cd story-app/backend
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
-cp .env.example .env  # fill in ANTHROPIC_API_KEY, ELEVENLABS_API_KEY, RUNWAY_API_KEY
+cp .env.example .env  # fill in GROQ_API_KEY and HUGGINGFACE_API_TOKEN (both free)
 uvicorn app.main:app --reload
 ```
 
-`ffmpeg` must also be installed and on `PATH` (`apt install ffmpeg` / `brew install ffmpeg`) — `assembly.py` shells out to it.
+`ffmpeg` (with `ffprobe`) must also be installed and on `PATH`
+(`apt install ffmpeg` / `brew install ffmpeg`).
+
+### Getting free API keys
+
+- **Groq** (story parsing): sign up at https://console.groq.com/keys — free tier, no credit card.
+- **Hugging Face** (scene images): sign up at https://huggingface.co — free account, create a token at https://huggingface.co/settings/tokens. The free Inference API has rate limits and a cold-start delay per model, but no cost.
+- Dialogue voices need no key at all (`edge-tts` is free and keyless).
 
 ## Endpoints
 
 - `POST /parse-story` — `{"story": "..."}` → characters, scenes, dialogue, voice assignments
 - `POST /generate-audio` — `{"parsed_story": <output of /parse-story>}` → base64 audio clips per line
-- `POST /generate-video` — `{"parsed_story": <output of /parse-story>}` → base64 video clip per scene
+- `POST /generate-video` — `{"parsed_story": ..., "audio_clips": [...]}` → base64 video clip per scene, timed to match that scene's dialogue
 - `POST /assemble-final-video` — `{"video_clips": [...], "audio_clips": [...]}` → base64 final MP4
 - `GET /health`
 
-## Notes / next steps
+## Notes / trade-offs of the free stack
 
-- `_VOICE_POOL` in `voice_assignment.py` uses placeholder ElevenLabs voice
-  IDs — replace with real IDs from your account.
-- `duration_seconds` in `tts.py` is a word-count estimate; decode the actual
-  audio to get a precise duration if you need exact scene timing.
-- `video_gen.py` targets Runway's Gen-3 Turbo text-to-video API; swap in
-  another provider (Pika, Kling, HeyGen) by replacing `_create_task`/
-  `_poll_task` — the rest of the pipeline (prompt building, polling loop
-  shape) carries over.
-- Scene videos and dialogue lines aren't generated with matching durations
-  yet — `assembly.py` mixes audio onto the video with `-shortest`, so a
-  scene's dialogue may get cut off if it's longer than the generated clip.
-  Tightening this (e.g. requesting longer clips, or looping/extending video
-  to match audio length) is the next thing to fix once this is running
-  end to end.
+- Groq's free Llama models are good but not as reliable at strict JSON/reasoning as Claude — occasional malformed output is possible; retry on 502 from `/parse-story` if it happens.
+- `edge-tts` has no true emotion control (just rate/pitch approximation) and a fixed voice catalog — see `_VOICE_POOL` in `voice_assignment.py` to add more voices.
+- There's no free true text-to-video API, so scene "video" here is a still AI image animated with a pan/zoom effect rather than actual generated motion. This is a common, genuinely free technique but won't look like Runway/Pika output. If you later get budget for a real video-gen API, swap `_generate_scene_image` + `_animate_image` in `video_gen.py` for a text-to-video call — the rest of the pipeline (prompt building, duration matching, assembly) carries over unchanged.
+- Hugging Face's free Inference API can be slow (model cold starts) and rate-limited; for heavier use, consider running Stable Diffusion locally instead.

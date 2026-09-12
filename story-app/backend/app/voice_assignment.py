@@ -1,20 +1,20 @@
 from .models import Character, ParsedStory, ParsedStoryWithVoices, VoiceAssignment
 
-# Static pool of ElevenLabs voice IDs bucketed by gender/age. Replace with real
-# voice IDs from your ElevenLabs account (or another TTS provider's catalog).
+# Free Microsoft Edge neural voices (used via edge-tts, no API key required).
+# Run `edge-tts --list-voices` for the full catalog.
 _VOICE_POOL: dict[tuple[str, str], list[str]] = {
-    ("male", "child"): ["voice_male_child_1"],
-    ("male", "young_adult"): ["voice_male_young_1", "voice_male_young_2"],
-    ("male", "adult"): ["voice_male_adult_1", "voice_male_adult_2"],
-    ("male", "elderly"): ["voice_male_elderly_1"],
-    ("female", "child"): ["voice_female_child_1"],
-    ("female", "young_adult"): ["voice_female_young_1", "voice_female_young_2"],
-    ("female", "adult"): ["voice_female_adult_1", "voice_female_adult_2"],
-    ("female", "elderly"): ["voice_female_elderly_1"],
-    ("neutral", "child"): ["voice_neutral_child_1"],
-    ("neutral", "young_adult"): ["voice_neutral_young_1"],
-    ("neutral", "adult"): ["voice_neutral_adult_1"],
-    ("neutral", "elderly"): ["voice_neutral_elderly_1"],
+    ("male", "child"): ["en-US-AnaNeural"],
+    ("male", "young_adult"): ["en-US-GuyNeural", "en-GB-RyanNeural"],
+    ("male", "adult"): ["en-US-ChristopherNeural", "en-GB-ThomasNeural"],
+    ("male", "elderly"): ["en-US-DavisNeural"],
+    ("female", "child"): ["en-US-AnaNeural"],
+    ("female", "young_adult"): ["en-US-JennyNeural", "en-GB-SoniaNeural"],
+    ("female", "adult"): ["en-US-AriaNeural", "en-GB-LibbyNeural"],
+    ("female", "elderly"): ["en-US-MichelleNeural"],
+    ("neutral", "child"): ["en-US-AnaNeural"],
+    ("neutral", "young_adult"): ["en-US-JennyNeural"],
+    ("neutral", "adult"): ["en-US-AriaNeural"],
+    ("neutral", "elderly"): ["en-US-DavisNeural"],
 }
 
 

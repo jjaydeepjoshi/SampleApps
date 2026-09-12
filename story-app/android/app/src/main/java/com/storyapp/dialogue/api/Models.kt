@@ -47,7 +47,10 @@ data class AudioClip(
 
 data class AudioResponse(val clips: List<AudioClip>)
 
-data class VideoRequest(val parsed_story: ParsedStoryWithVoices)
+data class VideoRequest(
+    val parsed_story: ParsedStoryWithVoices,
+    val audio_clips: List<AudioClip>,
+)
 
 data class VideoClip(
     val scene_id: Int,

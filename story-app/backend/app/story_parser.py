@@ -1,9 +1,14 @@
 import json
 import os
 
-from anthropic import Anthropic
+import httpx
 
 from .models import ParsedStory
+
+# Groq offers a free API tier (no credit card required) serving open models
+# like Llama 3.3 at very low latency. Get a free key at console.groq.com.
+_GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
+_GROQ_MODEL = "llama-3.3-70b-versatile"
 
 _SYSTEM_PROMPT = """You convert a short story into structured JSON for a dialogue/video pipeline.
 
@@ -39,23 +44,26 @@ Rules:
 """
 
 
-def _client() -> Anthropic:
-    api_key = os.environ.get("ANTHROPIC_API_KEY")
-    if not api_key:
-        raise RuntimeError("ANTHROPIC_API_KEY is not set")
-    return Anthropic(api_key=api_key)
-
-
 def parse_story(story_text: str) -> ParsedStory:
-    client = _client()
-    response = client.messages.create(
-        model="claude-sonnet-5",
-        max_tokens=4096,
-        system=_SYSTEM_PROMPT,
-        messages=[{"role": "user", "content": story_text}],
+    api_key = os.environ.get("GROQ_API_KEY")
+    if not api_key:
+        raise RuntimeError("GROQ_API_KEY is not set")
+
+    response = httpx.post(
+        _GROQ_URL,
+        headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+        json={
+            "model": _GROQ_MODEL,
+            "messages": [
+                {"role": "system", "content": _SYSTEM_PROMPT},
+                {"role": "user", "content": story_text},
+            ],
+            "response_format": {"type": "json_object"},
+            "temperature": 0.4,
+        },
+        timeout=60.0,
     )
-    raw_text = "".join(
-        block.text for block in response.content if block.type == "text"
-    )
+    response.raise_for_status()
+    raw_text = response.json()["choices"][0]["message"]["content"]
     data = json.loads(raw_text)
     return ParsedStory.model_validate(data)

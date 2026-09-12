@@ -61,6 +61,7 @@ class AudioResponse(BaseModel):
 
 class VideoRequest(BaseModel):
     parsed_story: ParsedStoryWithVoices
+    audio_clips: list[AudioClip] = []
 
 
 class VideoClip(BaseModel):

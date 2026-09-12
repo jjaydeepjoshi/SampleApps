@@ -75,7 +75,7 @@ class StoryViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             try {
                 _uiState.value = UiState.GeneratingVideo(current.parsed, current.clips)
-                val video = api.generateVideo(VideoRequest(current.parsed))
+                val video = api.generateVideo(VideoRequest(current.parsed, current.clips))
 
                 _uiState.value = UiState.AssemblingVideo(current.parsed, current.clips)
                 val finalVideo = api.assembleFinalVideo(

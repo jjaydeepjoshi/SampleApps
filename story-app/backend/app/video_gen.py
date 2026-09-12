@@ -1,15 +1,21 @@
-import asyncio
 import base64
 import os
+import subprocess
+import tempfile
 
 import httpx
 
-from .models import Character, ParsedStoryWithVoices, Scene, VideoClip
+from .models import AudioClip, Character, ParsedStoryWithVoices, Scene, VideoClip
 
-_RUNWAY_BASE_URL = "https://api.dev.runwayml.com/v1"
-_RUNWAY_API_VERSION = "2024-11-06"
-_POLL_INTERVAL_SECONDS = 5
-_POLL_TIMEOUT_SECONDS = 300
+# Hugging Face's free Inference API (requires only a free account + token,
+# see https://huggingface.co/settings/tokens). No paid video-gen API needed:
+# we generate one still image per scene, then animate it with a Ken Burns
+# pan/zoom via ffmpeg, which is free and runs entirely locally.
+_HF_MODEL = "stabilityai/stable-diffusion-2-1"
+_HF_URL = f"https://api-inference.huggingface.co/models/{_HF_MODEL}"
+
+_MIN_SCENE_SECONDS = 4.0
+_FRAME_RATE = 25
 
 
 def _scene_prompt(scene: Scene, characters_by_name: dict[str, Character]) -> str:
@@ -22,66 +28,78 @@ def _scene_prompt(scene: Scene, characters_by_name: dict[str, Character]) -> str
     parts = [scene.setting, scene.description]
     if character_bits:
         parts.append("Characters present: " + "; ".join(character_bits))
-    return ". ".join(part for part in parts if part)
+    return "cinematic still frame, " + ". ".join(part for part in parts if part)
 
 
-async def _create_task(client: httpx.AsyncClient, api_key: str, prompt: str) -> str:
+async def _generate_scene_image(client: httpx.AsyncClient, api_token: str, prompt: str) -> bytes:
     response = await client.post(
-        f"{_RUNWAY_BASE_URL}/text_to_video",
-        headers={
-            "Authorization": f"Bearer {api_key}",
-            "X-Runway-Version": _RUNWAY_API_VERSION,
-            "Content-Type": "application/json",
-        },
-        json={
-            "promptText": prompt,
-            "model": "gen3a_turbo",
-            "ratio": "1280:768",
-            "duration": 5,
-        },
-        timeout=30.0,
+        _HF_URL,
+        headers={"Authorization": f"Bearer {api_token}"},
+        json={"inputs": prompt, "options": {"wait_for_model": True}},
+        timeout=120.0,
     )
     response.raise_for_status()
-    return response.json()["id"]
+    return response.content
 
 
-async def _poll_task(client: httpx.AsyncClient, api_key: str, task_id: str) -> str:
-    headers = {"Authorization": f"Bearer {api_key}", "X-Runway-Version": _RUNWAY_API_VERSION}
-    elapsed = 0
-    while elapsed < _POLL_TIMEOUT_SECONDS:
-        response = await client.get(f"{_RUNWAY_BASE_URL}/tasks/{task_id}", headers=headers, timeout=30.0)
-        response.raise_for_status()
-        data = response.json()
-        status = data["status"]
-        if status == "SUCCEEDED":
-            return data["output"][0]
-        if status == "FAILED":
-            raise RuntimeError(f"video generation failed for task {task_id}: {data.get('failure')}")
-        await asyncio.sleep(_POLL_INTERVAL_SECONDS)
-        elapsed += _POLL_INTERVAL_SECONDS
-    raise TimeoutError(f"video generation timed out for task {task_id}")
+def _scene_duration_seconds(scene_id: int, audio_clips: list[AudioClip]) -> float:
+    total = sum(c.duration_seconds for c in audio_clips if c.scene_id == scene_id)
+    return max(_MIN_SCENE_SECONDS, total)
 
 
-async def generate_scene_videos(parsed: ParsedStoryWithVoices) -> list[VideoClip]:
-    api_key = os.environ.get("RUNWAY_API_KEY")
-    if not api_key:
-        raise RuntimeError("RUNWAY_API_KEY is not set")
+def _animate_image(image_path: str, duration_seconds: float, out_path: str) -> None:
+    frames = max(1, int(duration_seconds * _FRAME_RATE))
+    zoompan = f"zoompan=z='min(zoom+0.0008,1.2)':d={frames}:s=1280x720:fps={_FRAME_RATE}"
+    result = subprocess.run(
+        [
+            "ffmpeg", "-y",
+            "-loop", "1",
+            "-i", image_path,
+            "-vf", f"scale=1280:720,{zoompan},format=yuv420p",
+            "-t", str(duration_seconds),
+            "-r", str(_FRAME_RATE),
+            out_path,
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(f"ffmpeg animation failed: {result.stderr[-2000:]}")
+
+
+async def generate_scene_videos(
+    parsed: ParsedStoryWithVoices, audio_clips: list[AudioClip]
+) -> list[VideoClip]:
+    api_token = os.environ.get("HUGGINGFACE_API_TOKEN")
+    if not api_token:
+        raise RuntimeError("HUGGINGFACE_API_TOKEN is not set")
 
     characters_by_name = {c.name: c for c in parsed.characters}
     clips: list[VideoClip] = []
 
-    async with httpx.AsyncClient() as client:
-        for scene in parsed.scenes:
-            prompt = _scene_prompt(scene, characters_by_name)
-            task_id = await _create_task(client, api_key, prompt)
-            video_url = await _poll_task(client, api_key, task_id)
-            video_response = await client.get(video_url, timeout=120.0)
-            video_response.raise_for_status()
-            clips.append(
-                VideoClip(
-                    scene_id=scene.id,
-                    prompt=prompt,
-                    video_base64=base64.b64encode(video_response.content).decode("ascii"),
+    with tempfile.TemporaryDirectory() as tmp:
+        async with httpx.AsyncClient() as client:
+            for scene in parsed.scenes:
+                prompt = _scene_prompt(scene, characters_by_name)
+                image_bytes = await _generate_scene_image(client, api_token, prompt)
+
+                image_path = os.path.join(tmp, f"scene_{scene.id}.png")
+                with open(image_path, "wb") as f:
+                    f.write(image_bytes)
+
+                duration = _scene_duration_seconds(scene.id, audio_clips)
+                video_path = os.path.join(tmp, f"scene_{scene.id}.mp4")
+                _animate_image(image_path, duration, video_path)
+
+                with open(video_path, "rb") as f:
+                    video_bytes = f.read()
+
+                clips.append(
+                    VideoClip(
+                        scene_id=scene.id,
+                        prompt=prompt,
+                        video_base64=base64.b64encode(video_bytes).decode("ascii"),
+                    )
                 )
-            )
     return clips

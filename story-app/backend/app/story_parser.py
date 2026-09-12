@@ -2,6 +2,7 @@ import json
 import os
 
 import httpx
+from json_repair import repair_json
 
 from .models import ParsedStory
 
@@ -109,9 +110,24 @@ def _extract_json(raw_text: str) -> dict:
         pass
 
     start, end = text.find("{"), text.rfind("}")
-    if start != -1 and end != -1 and end > start:
-        return json.loads(text[start : end + 1])
-    raise RuntimeError(f"Groq response was not valid JSON: {raw_text[:500]}")
+    candidate = text[start : end + 1] if start != -1 and end != -1 and end > start else text
+
+    # Small/fast models frequently produce near-valid JSON with a missing
+    # comma or an unescaped quote inside a dialogue line (especially with
+    # mixed-script text) - repair_json fixes exactly that class of mistake
+    # rather than failing outright on a single stray character.
+    repaired = repair_json(candidate)
+    try:
+        parsed = json.loads(repaired)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(f"Groq response was not valid JSON: {raw_text[:500]}") from exc
+
+    # repair_json degrades ungrammatical input (e.g. plain prose with no
+    # JSON structure at all) to "" or similar rather than raising, so a
+    # non-dict result means there was never real JSON here to recover.
+    if not isinstance(parsed, dict):
+        raise RuntimeError(f"Groq response was not valid JSON: {raw_text[:500]}")
+    return parsed
 
 
 def parse_story(story_text: str, api_key: str) -> ParsedStory:

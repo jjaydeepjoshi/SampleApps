@@ -55,9 +55,9 @@ public URL rather than a LAN IP.
 **Render.com (recommended, free tier, no credit card):**
 
 1. Sign up at https://render.com (can connect directly with GitHub).
-2. New → **Blueprint** → pick this repo. Render reads `story-app/render.yaml`
-   automatically and builds `story-app/backend/Dockerfile` (which already
-   installs `ffmpeg`).
+2. New → **Blueprint** → pick this repo. Render reads `render.yaml` at the
+   repo root automatically and builds `story-app/backend/Dockerfile` (which
+   already installs `ffmpeg`).
 3. Deploy. You'll get a URL like `https://story-dialogue-backend-xxxx.onrender.com`.
 4. In the app's Settings screen, set the backend URL to that URL with a
    trailing slash, e.g. `https://story-dialogue-backend-xxxx.onrender.com/`.

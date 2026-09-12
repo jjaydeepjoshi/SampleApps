@@ -2,8 +2,8 @@ services:
   - type: web
     name: story-dialogue-backend
     runtime: docker
-    dockerfilePath: ./backend/Dockerfile
-    dockerContext: ./backend
+    dockerfilePath: ./story-app/backend/Dockerfile
+    dockerContext: ./story-app/backend
     plan: free
     healthCheckPath: /health
     envVars:

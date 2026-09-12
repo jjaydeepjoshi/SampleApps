@@ -69,7 +69,11 @@ def parse_story(story_text: str, api_key: str) -> ParsedStory:
         },
         timeout=60.0,
     )
-    response.raise_for_status()
+    if response.status_code >= 400:
+        # httpx's default raise_for_status() message drops the response body,
+        # which is where Groq actually explains what went wrong (bad key,
+        # decommissioned model, etc.) - surface that instead of a bare status.
+        raise RuntimeError(f"Groq API error {response.status_code}: {response.text}")
     raw_text = response.json()["choices"][0]["message"]["content"]
     data = json.loads(raw_text)
     return ParsedStory.model_validate(data)

@@ -38,7 +38,10 @@ async def _generate_scene_image(client: httpx.AsyncClient, api_token: str, promp
         json={"inputs": prompt, "options": {"wait_for_model": True}},
         timeout=120.0,
     )
-    response.raise_for_status()
+    if response.status_code >= 400:
+        raise RuntimeError(
+            f"Hugging Face API error {response.status_code}: {response.text}"
+        )
     return response.content
 
 

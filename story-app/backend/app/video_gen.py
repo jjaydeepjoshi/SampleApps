@@ -1,3 +1,4 @@
+import asyncio
 import base64
 import os
 import subprocess
@@ -41,25 +42,43 @@ def _scene_prompt(scene: Scene, characters_by_name: dict[str, Character]) -> str
     return "cinematic still frame, " + ". ".join(part for part in parts if part)
 
 
+_DNS_RETRY_ATTEMPTS = 3
+_DNS_RETRY_DELAY_SECONDS = 2.0
+
+
 async def _generate_scene_image(client: httpx.AsyncClient, api_token: str, prompt: str) -> bytes:
     last_error: Exception | None = None
-    for url in _HF_URLS:
-        try:
-            response = await client.post(
-                url,
-                headers={"Authorization": f"Bearer {api_token}"},
-                json={"inputs": prompt, "options": {"wait_for_model": True}},
-                timeout=120.0,
-            )
-        except httpx.ConnectError as exc:
-            last_error = exc
-            continue
-        if response.status_code >= 400:
-            last_error = RuntimeError(
-                f"Hugging Face API error {response.status_code} ({url}): {response.text}"
-            )
-            continue
-        return response.content
+
+    for attempt in range(_DNS_RETRY_ATTEMPTS):
+        any_dns_failure = False
+        for url in _HF_URLS:
+            try:
+                response = await client.post(
+                    url,
+                    headers={"Authorization": f"Bearer {api_token}"},
+                    json={"inputs": prompt, "options": {"wait_for_model": True}},
+                    timeout=120.0,
+                )
+            except httpx.ConnectError as exc:
+                # A real test hit this on BOTH known endpoints at once, which
+                # points to a transient DNS resolution hiccup on the host
+                # (cloud containers occasionally see this) rather than either
+                # endpoint actually being down - worth a few retries before
+                # giving up, unlike a clean 4xx/5xx which retrying won't fix.
+                last_error = exc
+                any_dns_failure = True
+                continue
+            if response.status_code >= 400:
+                last_error = RuntimeError(
+                    f"Hugging Face API error {response.status_code} ({url}): {response.text}"
+                )
+                continue
+            return response.content
+
+        if not any_dns_failure:
+            break
+        if attempt < _DNS_RETRY_ATTEMPTS - 1:
+            await asyncio.sleep(_DNS_RETRY_DELAY_SECONDS)
 
     raise RuntimeError(f"Hugging Face API unreachable on all known endpoints: {last_error}")
 

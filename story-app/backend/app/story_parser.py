@@ -1,13 +1,18 @@
 import json
+import os
 
 import httpx
 
 from .models import ParsedStory
 
 # Groq offers a free API tier (no credit card required) serving open models
-# like Llama 3.3 at very low latency. Get a free key at console.groq.com.
+# at very low latency. Get a free key at console.groq.com. Groq periodically
+# retires older model IDs (this broke once already - llama-3.3-70b-versatile
+# was decommissioned), so the model is overridable via GROQ_MODEL without a
+# code change/redeploy if it happens again; check the current list with
+# `curl -H "Authorization: Bearer $GROQ_API_KEY" https://api.groq.com/openai/v1/models`.
 _GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
-_GROQ_MODEL = "llama-3.3-70b-versatile"
+_GROQ_MODEL = os.environ.get("GROQ_MODEL", "llama-3.1-8b-instant")
 
 _SYSTEM_PROMPT = """You convert a short story into structured JSON for a dialogue/video pipeline.
 

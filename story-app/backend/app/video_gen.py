@@ -12,7 +12,17 @@ from .models import AudioClip, Character, ParsedStoryWithVoices, Scene, VideoCli
 # we generate one still image per scene, then animate it with a Ken Burns
 # pan/zoom via ffmpeg, which is free and runs entirely locally.
 _HF_MODEL = "stabilityai/stable-diffusion-2-1"
-_HF_URL = f"https://api-inference.huggingface.co/models/{_HF_MODEL}"
+# Hugging Face has been migrating serverless inference off the legacy
+# api-inference.huggingface.co host onto a newer unified router - a real
+# test hit "[Errno -5] No address associated with hostname" (a DNS failure,
+# not an HTTP error) on the old host, consistent with it being retired for
+# at least some accounts/models. Try the modern endpoint first, fall back
+# to the legacy one, so this keeps working regardless of which is actually
+# live for a given account.
+_HF_URLS = [
+    f"https://router.huggingface.co/hf-inference/models/{_HF_MODEL}",
+    f"https://api-inference.huggingface.co/models/{_HF_MODEL}",
+]
 
 _MIN_SCENE_SECONDS = 4.0
 _FRAME_RATE = 25
@@ -32,17 +42,26 @@ def _scene_prompt(scene: Scene, characters_by_name: dict[str, Character]) -> str
 
 
 async def _generate_scene_image(client: httpx.AsyncClient, api_token: str, prompt: str) -> bytes:
-    response = await client.post(
-        _HF_URL,
-        headers={"Authorization": f"Bearer {api_token}"},
-        json={"inputs": prompt, "options": {"wait_for_model": True}},
-        timeout=120.0,
-    )
-    if response.status_code >= 400:
-        raise RuntimeError(
-            f"Hugging Face API error {response.status_code}: {response.text}"
-        )
-    return response.content
+    last_error: Exception | None = None
+    for url in _HF_URLS:
+        try:
+            response = await client.post(
+                url,
+                headers={"Authorization": f"Bearer {api_token}"},
+                json={"inputs": prompt, "options": {"wait_for_model": True}},
+                timeout=120.0,
+            )
+        except httpx.ConnectError as exc:
+            last_error = exc
+            continue
+        if response.status_code >= 400:
+            last_error = RuntimeError(
+                f"Hugging Face API error {response.status_code} ({url}): {response.text}"
+            )
+            continue
+        return response.content
+
+    raise RuntimeError(f"Hugging Face API unreachable on all known endpoints: {last_error}")
 
 
 def _scene_duration_seconds(scene_id: int, audio_clips: list[AudioClip]) -> float:

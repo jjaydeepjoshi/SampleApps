@@ -190,11 +190,29 @@ fun StoryScreen(viewModel: StoryViewModel) {
             is UiState.GeneratingAudio -> LoadingRow("Generating character voices...")
             is UiState.GeneratingVideo -> LoadingRow("Generating scene videos...")
             is UiState.AssemblingVideo -> LoadingRow("Assembling final video...")
-            is UiState.Error -> Text(
-                text = "Error: ${current.message}",
-                color = MaterialTheme.colorScheme.error,
-                modifier = Modifier.padding(top = 12.dp),
-            )
+            is UiState.Error -> Column {
+                Text(
+                    text = "Error: ${current.message}",
+                    color = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.padding(top = 12.dp),
+                )
+                if (current.parsed != null) {
+                    // Dialogue already succeeded - only the video step failed,
+                    // so keep showing it and offer to retry video without
+                    // burning another Groq/TTS round trip.
+                    Button(
+                        onClick = { viewModel.retryVideoAfterError() },
+                        modifier = Modifier.padding(top = 8.dp),
+                    ) {
+                        Text("Retry video generation")
+                    }
+                    ResultList(
+                        parsed = current.parsed,
+                        clips = current.clips,
+                        onPlay = viewModel::playClip,
+                    )
+                }
+            }
             is UiState.DialogueReady -> Column {
                 ResultList(
                     parsed = current.parsed,

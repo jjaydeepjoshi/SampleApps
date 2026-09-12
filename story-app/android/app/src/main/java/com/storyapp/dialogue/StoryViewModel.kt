@@ -58,7 +58,14 @@ sealed class UiState {
         val clips: List<AudioClip>,
         val videoFile: File,
     ) : UiState()
-    data class Error(val message: String) : UiState()
+    data class Error(
+        val message: String,
+        // Carries the prior dialogue forward when only the video step
+        // failed, so the user isn't forced to burn Groq/TTS calls again
+        // regenerating dialogue just to retry video generation.
+        val parsed: ParsedStoryWithVoices? = null,
+        val clips: List<AudioClip> = emptyList(),
+    ) : UiState()
 }
 
 class StoryViewModel(application: Application) : AndroidViewModel(application) {
@@ -137,8 +144,16 @@ class StoryViewModel(application: Application) : AndroidViewModel(application) {
 
                 _uiState.value = UiState.VideoReady(current.parsed, current.clips, file)
             } catch (t: Throwable) {
-                _uiState.value = UiState.Error(t.describe())
+                _uiState.value = UiState.Error(t.describe(), current.parsed, current.clips)
             }
+        }
+    }
+
+    fun retryVideoAfterError() {
+        val current = _uiState.value
+        if (current is UiState.Error && current.parsed != null) {
+            _uiState.value = UiState.DialogueReady(current.parsed, current.clips)
+            generateVideo()
         }
     }
 

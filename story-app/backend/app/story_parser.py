@@ -108,6 +108,8 @@ Rules:
   the emotion label itself should stay in English regardless of story language,
   since it drives voice/prosody settings, not narration.
 - Keep descriptions concise (1-2 sentences).
+- If you reason before answering, keep it to a few short sentences at most -
+  most of your output budget must go to the JSON itself, not to reasoning.
 """
 
 
@@ -164,29 +166,48 @@ def _extract_json(raw_text: str) -> dict:
     return parsed
 
 
+_OTPM_LIMIT_RE = re.compile(r"output tokens per minute \(OTPM\): Limit (\d+)")
+
+
 def parse_story(story_text: str, api_key: str) -> ParsedStory:
     if not api_key:
         raise RuntimeError("a Groq API key is required (set it in the app's Settings screen)")
 
     model = _resolve_model(api_key)
 
-    response = httpx.post(
-        f"{_GROQ_BASE_URL}/chat/completions",
-        headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
-        json={
-            "model": model,
-            "messages": [
-                {"role": "system", "content": _SYSTEM_PROMPT},
-                {"role": "user", "content": story_text},
-            ],
-            "temperature": 0.4,
-            # Generous headroom: a reasoning model's <think> block alone can
-            # run to several thousand tokens before it even starts the
-            # actual JSON answer.
-            "max_tokens": 8192,
-        },
-        timeout=90.0,
-    )
+    def post(max_tokens: int) -> httpx.Response:
+        return httpx.post(
+            f"{_GROQ_BASE_URL}/chat/completions",
+            headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+            json={
+                "model": model,
+                "messages": [
+                    {"role": "system", "content": _SYSTEM_PROMPT},
+                    {"role": "user", "content": story_text},
+                ],
+                "temperature": 0.4,
+                # Generous headroom by default: a reasoning model's <think>
+                # block alone can run to several thousand tokens before it
+                # even starts the actual JSON answer. Some free-tier
+                # accounts cap output-tokens-per-minute well below this
+                # though (see the 429 retry below), in which case this gets
+                # reduced automatically to whatever that account allows.
+                "max_tokens": max_tokens,
+            },
+            timeout=90.0,
+        )
+
+    response = post(8192)
+
+    if response.status_code == 429:
+        match = _OTPM_LIMIT_RE.search(response.text)
+        if match:
+            # Self-heal against the account's actual per-minute output
+            # budget instead of failing outright - leave a little headroom
+            # since the limit is shared with anything else hitting this key.
+            retry_max_tokens = max(256, int(match.group(1)) - 32)
+            response = post(retry_max_tokens)
+
     if response.status_code >= 400:
         # httpx's default raise_for_status() message drops the response body,
         # which is where Groq actually explains what went wrong (bad key,

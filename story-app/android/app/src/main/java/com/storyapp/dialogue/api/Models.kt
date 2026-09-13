@@ -54,7 +54,6 @@ data class AudioResponse(val clips: List<AudioClip>)
 data class VideoRequest(
     val parsed_story: ParsedStoryWithVoices,
     val audio_clips: List<AudioClip>,
-    val huggingface_api_token: String,
 )
 
 data class VideoClip(

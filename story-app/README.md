@@ -6,12 +6,12 @@ character a voice, generate per-line dialogue audio, generate an AI video
 clip per scene, and mux it all into one final video.
 
 - `backend/` — FastAPI service: Groq-based story parsing, free Edge-TTS
-  voices, Hugging Face scene images animated via ffmpeg, ffmpeg assembly.
-  Holds no API keys itself — see `backend/README.md`.
+  voices, Pollinations.ai scene images animated via ffmpeg, ffmpeg assembly.
+  Holds no API key itself — see `backend/README.md`.
 - `android/` — Kotlin/Jetpack Compose app: each user enters their own free
-  Groq/Hugging Face API keys in the Settings screen (encrypted on-device),
-  then pastes a story, sees the extracted characters, plays each line of
-  dialogue, and generates/plays the final assembled video.
+  Groq API key in the Settings screen (encrypted on-device), then pastes a
+  story, sees the extracted characters, plays each line of dialogue, and
+  generates/plays the final assembled video.
 
 ## Running locally
 
@@ -21,8 +21,8 @@ clip per scene, and mux it all into one final video.
    emulator). For a physical device, change `API_BASE_URL` in
    `android/app/build.gradle.kts` to your machine's LAN IP.
 3. On first launch, the app opens straight to Settings — get a free Groq key
-   (https://console.groq.com/keys) and, for video, a free Hugging Face token
-   (https://huggingface.co/settings/tokens), paste them in, and Save.
+   (https://console.groq.com/keys), paste it in, and Save. No other key is
+   needed (TTS and scene images are both free/keyless services).
 
 ### Saved API keys survive app updates
 

@@ -65,7 +65,12 @@ class AudioResponse(BaseModel):
 class VideoRequest(BaseModel):
     parsed_story: ParsedStoryWithVoices
     audio_clips: list[AudioClip] = []
-    huggingface_api_token: str
+    # No longer used - scene images come from Pollinations.ai (free, keyless)
+    # instead of Hugging Face, which turned out to be unreachable from the
+    # backend's host network. Kept optional so an already-installed app
+    # (which still sends this field) doesn't break against a redeployed
+    # backend before it gets updated.
+    huggingface_api_token: str = ""
 
 
 class VideoClip(BaseModel):

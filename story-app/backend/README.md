@@ -15,9 +15,11 @@ required):
    keyless) to synthesize each dialogue line, approximating emotion via
    rate/pitch, and measures real duration with `ffprobe`.
 4. **Scene video generation** (`app/video_gen.py`) — generates one still
-   image per scene from Hugging Face's free Inference API (Stable Diffusion
-   2.1), then animates it with an `ffmpeg` Ken Burns pan/zoom, timed to match
-   that scene's total dialogue duration.
+   image per scene from Pollinations.ai's free, keyless text-to-image API,
+   then animates it with an `ffmpeg` Ken Burns pan/zoom, timed to match that
+   scene's total dialogue duration. (Hugging Face's Inference API was tried
+   first but turned out to be unreachable from at least this backend's host
+   network — see the trade-offs section below.)
 5. **Final video assembly** (`app/assembly.py`) — muxes each scene's dialogue
    audio onto its animated clip and concatenates all scenes into one final
    MP4 via `ffmpeg`.
@@ -72,25 +74,23 @@ Notes:
 
 ### API keys: bring-your-own, per user, from the app
 
-This backend holds **no API keys of its own** — it's a shared/multi-tenant
+This backend holds **no API key of its own** — it's a shared/multi-tenant
 service. Every caller (the Android app) supplies their own free Groq API key
-and Hugging Face token with each request, and the backend just forwards them
-to the respective free API. This means:
+with each request, and the backend just forwards it to Groq. This means:
 
-- Each user signs up for their own free Groq/Hugging Face account in the app's
-  Settings screen — no shared secret to manage or leak on the server.
+- Each user signs up for their own free Groq account in the app's Settings
+  screen — no shared secret to manage or leak on the server.
 - `/parse-story` requires `groq_api_key` in the request body.
-- `/generate-video` requires `huggingface_api_token` in the request body.
-- Dialogue voices need no key at all (`edge-tts` is free and keyless).
+- Dialogue voices need no key (`edge-tts` is free and keyless), and neither
+  does scene image generation (Pollinations.ai is free and keyless too).
 
-Getting the free keys: Groq at https://console.groq.com/keys (no credit
-card), Hugging Face at https://huggingface.co/settings/tokens (free account).
+Get a free Groq key at https://console.groq.com/keys (no credit card).
 
 ## Endpoints
 
 - `POST /parse-story` — `{"story": "...", "groq_api_key": "..."}` → characters, scenes, dialogue, voice assignments
 - `POST /generate-audio` — `{"parsed_story": <output of /parse-story>}` → base64 audio clips per line
-- `POST /generate-video` — `{"parsed_story": ..., "audio_clips": [...], "huggingface_api_token": "..."}` → base64 video clip per scene, timed to match that scene's dialogue
+- `POST /generate-video` — `{"parsed_story": ..., "audio_clips": [...]}` → base64 video clip per scene, timed to match that scene's dialogue
 - `POST /assemble-final-video` — `{"video_clips": [...], "audio_clips": [...]}` → base64 final MP4
 - `GET /health`
 
@@ -99,6 +99,6 @@ card), Hugging Face at https://huggingface.co/settings/tokens (free account).
 - Groq's free Llama models are good but not as reliable at strict JSON/reasoning as Claude — occasional malformed output is possible; retry on 502 from `/parse-story` if it happens.
 - Groq retires model IDs over time (`llama-3.3-70b-versatile` was already decommissioned once during development — error was `model_not_found`). If `/parse-story` starts failing with that error again, set a `GROQ_MODEL` env var on your host to a currently-supported model ID (check with `curl -H "Authorization: Bearer $GROQ_API_KEY" https://api.groq.com/openai/v1/models`) — no code change needed.
 - `edge-tts` has no true emotion control (just rate/pitch approximation) and a fixed voice catalog — see `_VOICE_POOLS` in `voice_assignment.py` to add more languages/voices. Hindi currently only has one male and one female voice (no age variety) since that's all edge-tts ships for `hi-IN`.
-- Scene image prompts (for Hugging Face) are built from the setting/description in the story's own language; Stable Diffusion tends to work best with English prompts, so non-English stories may get lower-quality scene images even though dialogue audio is correct.
+- Scene image prompts are built from the setting/description in the story's own language; most text-to-image models work best with English prompts, so non-English stories may get lower-quality scene images even though dialogue audio is correct.
 - There's no free true text-to-video API, so scene "video" here is a still AI image animated with a pan/zoom effect rather than actual generated motion. This is a common, genuinely free technique but won't look like Runway/Pika output. If you later get budget for a real video-gen API, swap `_generate_scene_image` + `_animate_image` in `video_gen.py` for a text-to-video call — the rest of the pipeline (prompt building, duration matching, assembly) carries over unchanged.
-- Hugging Face's free Inference API can be slow (model cold starts) and rate-limited; for heavier use, consider running Stable Diffusion locally instead.
+- **Why Pollinations.ai instead of Hugging Face**: Hugging Face's Inference API (both the legacy `api-inference.huggingface.co` host and the newer `router.huggingface.co`) was unreachable from a real Render deployment — DNS resolution failed persistently ("[Errno -5] No address associated with hostname") even with retries and forced IPv4, while Groq and edge-tts worked fine from the same instance. That pattern (one third-party's domains specifically unreachable, others fine) is consistent with the host's IP range being blocked by that provider's anti-abuse system rather than a bug in this code. Pollinations.ai needs no API key/account, which also removed a whole Settings field from the app.

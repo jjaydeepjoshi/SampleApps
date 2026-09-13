@@ -3,30 +3,29 @@ import base64
 import os
 import subprocess
 import tempfile
+import urllib.parse
 
 import httpx
 
 from .models import AudioClip, Character, ParsedStoryWithVoices, Scene, VideoClip
 
-# Hugging Face's free Inference API (requires only a free account + token,
-# see https://huggingface.co/settings/tokens). No paid video-gen API needed:
-# we generate one still image per scene, then animate it with a Ken Burns
-# pan/zoom via ffmpeg, which is free and runs entirely locally.
-_HF_MODEL = "stabilityai/stable-diffusion-2-1"
-# Hugging Face has been migrating serverless inference off the legacy
-# api-inference.huggingface.co host onto a newer unified router - a real
-# test hit "[Errno -5] No address associated with hostname" (a DNS failure,
-# not an HTTP error) on the old host, consistent with it being retired for
-# at least some accounts/models. Try the modern endpoint first, fall back
-# to the legacy one, so this keeps working regardless of which is actually
-# live for a given account.
-_HF_URLS = [
-    f"https://router.huggingface.co/hf-inference/models/{_HF_MODEL}",
-    f"https://api-inference.huggingface.co/models/{_HF_MODEL}",
-]
+# Scene images come from Pollinations.ai's free, keyless text-to-image API.
+# We tried Hugging Face's Inference API first (both the legacy
+# api-inference.huggingface.co host and the newer router.huggingface.co),
+# but a real deployment on Render hit "[Errno -5] No address associated
+# with hostname" persistently on BOTH, across retries, with IPv4 forced -
+# while Groq and edge-tts worked fine from the same instance. That points
+# to Hugging Face's inference domains specifically being unreachable from
+# Render's network (cloud-host IP ranges are a common target for anti-abuse
+# blocking on free inference APIs), not a transient or code-level issue.
+# Pollinations requires no API key/account at all, which also simplifies
+# the app - no Hugging Face token setting needed anymore.
+_IMAGE_API_URL = "https://image.pollinations.ai/prompt/{prompt}"
 
 _MIN_SCENE_SECONDS = 4.0
 _FRAME_RATE = 25
+_RETRY_ATTEMPTS = 3
+_RETRY_DELAY_SECONDS = 2.0
 
 
 def _scene_prompt(scene: Scene, characters_by_name: dict[str, Character]) -> str:
@@ -42,45 +41,30 @@ def _scene_prompt(scene: Scene, characters_by_name: dict[str, Character]) -> str
     return "cinematic still frame, " + ". ".join(part for part in parts if part)
 
 
-_DNS_RETRY_ATTEMPTS = 3
-_DNS_RETRY_DELAY_SECONDS = 2.0
-
-
-async def _generate_scene_image(client: httpx.AsyncClient, api_token: str, prompt: str) -> bytes:
+async def _generate_scene_image(client: httpx.AsyncClient, prompt: str) -> bytes:
+    url = _IMAGE_API_URL.format(prompt=urllib.parse.quote(prompt))
     last_error: Exception | None = None
 
-    for attempt in range(_DNS_RETRY_ATTEMPTS):
-        any_dns_failure = False
-        for url in _HF_URLS:
-            try:
-                response = await client.post(
-                    url,
-                    headers={"Authorization": f"Bearer {api_token}"},
-                    json={"inputs": prompt, "options": {"wait_for_model": True}},
-                    timeout=120.0,
-                )
-            except httpx.ConnectError as exc:
-                # A real test hit this on BOTH known endpoints at once, which
-                # points to a transient DNS resolution hiccup on the host
-                # (cloud containers occasionally see this) rather than either
-                # endpoint actually being down - worth a few retries before
-                # giving up, unlike a clean 4xx/5xx which retrying won't fix.
-                last_error = exc
-                any_dns_failure = True
-                continue
-            if response.status_code >= 400:
-                last_error = RuntimeError(
-                    f"Hugging Face API error {response.status_code} ({url}): {response.text}"
-                )
-                continue
-            return response.content
+    for attempt in range(_RETRY_ATTEMPTS):
+        try:
+            response = await client.get(
+                url,
+                params={"width": 1280, "height": 720, "nologo": "true"},
+                timeout=120.0,
+            )
+        except httpx.TransportError as exc:
+            last_error = exc
+        else:
+            if response.status_code < 400:
+                return response.content
+            last_error = RuntimeError(
+                f"Pollinations API error {response.status_code}: {response.text[:500]}"
+            )
 
-        if not any_dns_failure:
-            break
-        if attempt < _DNS_RETRY_ATTEMPTS - 1:
-            await asyncio.sleep(_DNS_RETRY_DELAY_SECONDS)
+        if attempt < _RETRY_ATTEMPTS - 1:
+            await asyncio.sleep(_RETRY_DELAY_SECONDS)
 
-    raise RuntimeError(f"Hugging Face API unreachable on all known endpoints: {last_error}")
+    raise RuntimeError(f"Scene image generation failed: {last_error}")
 
 
 def _scene_duration_seconds(scene_id: int, audio_clips: list[AudioClip]) -> float:
@@ -110,30 +94,16 @@ def _animate_image(image_path: str, duration_seconds: float, out_path: str) -> N
 
 
 async def generate_scene_videos(
-    parsed: ParsedStoryWithVoices, audio_clips: list[AudioClip], api_token: str
+    parsed: ParsedStoryWithVoices, audio_clips: list[AudioClip]
 ) -> list[VideoClip]:
-    if not api_token:
-        raise RuntimeError(
-            "a Hugging Face API token is required (set it in the app's Settings screen)"
-        )
-
     characters_by_name = {c.name: c for c in parsed.characters}
     clips: list[VideoClip] = []
 
     with tempfile.TemporaryDirectory() as tmp:
-        # Real test: DNS resolution for BOTH known Hugging Face hostnames
-        # failed identically even across retries - "[Errno -5] No address
-        # associated with hostname" persisting like that (not transient)
-        # points to a broken IPv6 stack in the container (DNS returns an
-        # AAAA record with no usable route) rather than either host being
-        # genuinely unreachable. Binding the local address to an IPv4
-        # literal forces httpx/httpcore to resolve and connect over IPv4
-        # only, which is the standard workaround for this failure mode.
-        transport = httpx.AsyncHTTPTransport(local_address="0.0.0.0")
-        async with httpx.AsyncClient(transport=transport) as client:
+        async with httpx.AsyncClient() as client:
             for scene in parsed.scenes:
                 prompt = _scene_prompt(scene, characters_by_name)
-                image_bytes = await _generate_scene_image(client, api_token, prompt)
+                image_bytes = await _generate_scene_image(client, prompt)
 
                 image_path = os.path.join(tmp, f"scene_{scene.id}.png")
                 with open(image_path, "wb") as f:

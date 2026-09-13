@@ -93,14 +93,12 @@ fun AppRoot(viewModel: StoryViewModel) {
 @Composable
 fun SettingsScreen(viewModel: StoryViewModel, onDone: () -> Unit) {
     var groqKey by remember { mutableStateOf(viewModel.getGroqKey()) }
-    var hfToken by remember { mutableStateOf(viewModel.getHuggingFaceToken()) }
     var backendUrl by remember { mutableStateOf(viewModel.getBackendUrl()) }
 
     Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
         Text("Settings", style = MaterialTheme.typography.headlineSmall)
         Text(
-            "Each user brings their own free API keys — nothing is stored on the server, " +
-                "only encrypted on this device.",
+            "Your API key is stored encrypted on this device only, never on the server.",
             modifier = Modifier.padding(top = 8.dp, bottom = 16.dp),
         )
 
@@ -133,23 +131,9 @@ fun SettingsScreen(viewModel: StoryViewModel, onDone: () -> Unit) {
             label = { Text("gsk_...") },
         )
 
-        Text("Hugging Face API token (needed for video)", style = MaterialTheme.typography.titleSmall)
-        Text(
-            "Free account: huggingface.co/settings/tokens",
-            style = MaterialTheme.typography.bodySmall,
-        )
-        OutlinedTextField(
-            value = hfToken,
-            onValueChange = { hfToken = it },
-            modifier = Modifier.fillMaxWidth().padding(top = 4.dp, bottom = 16.dp),
-            singleLine = true,
-            visualTransformation = PasswordVisualTransformation(),
-            label = { Text("hf_...") },
-        )
-
         Button(
             onClick = {
-                viewModel.saveSettings(groqKey, hfToken, backendUrl)
+                viewModel.saveSettings(groqKey, backendUrl)
                 onDone()
             },
         ) {

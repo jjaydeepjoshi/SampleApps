@@ -81,13 +81,10 @@ class StoryViewModel(application: Application) : AndroidViewModel(application) {
 
     fun getGroqKey(): String = apiKeyStore.groqApiKey
 
-    fun getHuggingFaceToken(): String = apiKeyStore.huggingFaceApiToken
-
     fun getBackendUrl(): String = apiKeyStore.backendUrl
 
-    fun saveSettings(groqKey: String, huggingFaceToken: String, backendUrl: String) {
+    fun saveSettings(groqKey: String, backendUrl: String) {
         apiKeyStore.groqApiKey = groqKey.trim()
-        apiKeyStore.huggingFaceApiToken = huggingFaceToken.trim()
         val trimmedUrl = backendUrl.trim()
         apiKeyStore.backendUrl = trimmedUrl.ifBlank { ApiKeyStore.DEFAULT_BACKEND_URL }
         api = StoryApi.create(apiKeyStore.backendUrl)
@@ -120,16 +117,10 @@ class StoryViewModel(application: Application) : AndroidViewModel(application) {
         val current = _uiState.value
         if (current !is UiState.DialogueReady) return
 
-        val hfToken = apiKeyStore.huggingFaceApiToken
-        if (hfToken.isBlank()) {
-            _uiState.value = UiState.Error("Add your Hugging Face API token in Settings first")
-            return
-        }
-
         viewModelScope.launch {
             try {
                 _uiState.value = UiState.GeneratingVideo(current.parsed, current.clips)
-                val video = api.generateVideo(VideoRequest(current.parsed, current.clips, hfToken))
+                val video = api.generateVideo(VideoRequest(current.parsed, current.clips))
 
                 _uiState.value = UiState.AssemblingVideo(current.parsed, current.clips)
                 val finalVideo = api.assembleFinalVideo(

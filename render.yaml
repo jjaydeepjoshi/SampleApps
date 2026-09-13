@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: story-dialogue-backend
+    runtime: docker
+    dockerfilePath: ./story-app/backend/Dockerfile
+    dockerContext: ./story-app/backend
+    plan: free
+    healthCheckPath: /health
+    envVars:
+      - key: PORT
+        value: 8000

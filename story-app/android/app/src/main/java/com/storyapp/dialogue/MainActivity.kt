@@ -185,43 +185,41 @@ fun StoryScreen(viewModel: StoryViewModel) {
                 if (current.parsed != null) {
                     // Dialogue already succeeded - only the video step failed,
                     // so keep showing it and offer to retry video without
-                    // burning another Groq/TTS round trip.
-                    Button(
-                        onClick = { viewModel.retryVideoAfterError() },
-                        modifier = Modifier.padding(top = 8.dp),
-                    ) {
-                        Text("Retry video generation")
-                    }
+                    // burning another Groq/TTS round trip. The retry button
+                    // is the footer so it stays reachable no matter how long
+                    // the dialogue list is.
                     ResultList(
                         parsed = current.parsed,
                         clips = current.clips,
                         onPlay = viewModel::playClip,
-                    )
+                        modifier = Modifier,
+                    ) {
+                        Button(onClick = { viewModel.retryVideoAfterError() }) {
+                            Text("Retry video generation")
+                        }
+                    }
                 }
             }
-            is UiState.DialogueReady -> Column {
-                ResultList(
-                    parsed = current.parsed,
-                    clips = current.clips,
-                    onPlay = viewModel::playClip,
-                )
-                Button(
-                    onClick = { viewModel.generateVideo() },
-                    modifier = Modifier.padding(top = 12.dp),
-                ) {
+            is UiState.DialogueReady -> ResultList(
+                parsed = current.parsed,
+                clips = current.clips,
+                onPlay = viewModel::playClip,
+                modifier = Modifier,
+            ) {
+                Button(onClick = { viewModel.generateVideo() }) {
                     Text("Generate video")
                 }
             }
-            is UiState.VideoReady -> Column {
-                ResultList(
-                    parsed = current.parsed,
-                    clips = current.clips,
-                    onPlay = viewModel::playClip,
-                )
+            is UiState.VideoReady -> ResultList(
+                parsed = current.parsed,
+                clips = current.clips,
+                onPlay = viewModel::playClip,
+                modifier = Modifier,
+            ) {
                 Text(
                     "Final video",
                     style = MaterialTheme.typography.titleMedium,
-                    modifier = Modifier.padding(top = 16.dp),
+                    modifier = Modifier.padding(bottom = 8.dp),
                 )
                 VideoPlayer(current.videoFile)
             }
@@ -245,8 +243,16 @@ fun ResultList(
     parsed: ParsedStoryWithVoices,
     clips: List<AudioClip>,
     onPlay: (AudioClip) -> Unit,
+    modifier: Modifier = Modifier,
+    // Anything that must stay reachable regardless of list length (e.g. the
+    // "Generate video" button) goes here as a LazyColumn item instead of a
+    // sibling placed after this composable - a LazyColumn inside a plain
+    // Column expands to fill all available height, which silently pushed
+    // such a sibling off-screen once the list got long enough (bug found
+    // with a 4-character, 12-line story after 2-3 line stories worked fine).
+    footer: @Composable () -> Unit = {},
 ) {
-    LazyColumn(modifier = Modifier.padding(top = 16.dp)) {
+    LazyColumn(modifier = modifier.padding(top = 16.dp)) {
         item {
             Text("Characters", style = MaterialTheme.typography.titleMedium)
         }
@@ -267,6 +273,12 @@ fun ResultList(
                 Button(onClick = { onPlay(clip) }) {
                     Text("Play")
                 }
+            }
+        }
+
+        item {
+            Column(modifier = Modifier.padding(top = 12.dp)) {
+                footer()
             }
         }
     }

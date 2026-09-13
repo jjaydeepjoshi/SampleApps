@@ -1,6 +1,7 @@
 import json
 import os
 import re
+import time
 
 import httpx
 from json_repair import repair_json
@@ -167,6 +168,8 @@ def _extract_json(raw_text: str) -> dict:
 
 
 _OTPM_LIMIT_RE = re.compile(r"output tokens per minute \(OTPM\): Limit (\d+)")
+_RETRY_AFTER_RE = re.compile(r"[Pp]lease try again in ([\d.]+)s")
+_MAX_RATE_LIMIT_WAIT_SECONDS = 60.0
 
 
 def parse_story(story_text: str, api_key: str) -> ParsedStory:
@@ -199,14 +202,33 @@ def parse_story(story_text: str, api_key: str) -> ParsedStory:
 
     response = post(8192)
 
-    if response.status_code == 429:
-        match = _OTPM_LIMIT_RE.search(response.text)
-        if match:
-            # Self-heal against the account's actual per-minute output
-            # budget instead of failing outright - leave a little headroom
-            # since the limit is shared with anything else hitting this key.
-            retry_max_tokens = max(256, int(match.group(1)) - 32)
+    for _ in range(2):
+        if response.status_code != 429:
+            break
+
+        # Real test: the account had already used most of its per-minute
+        # output-token budget from earlier attempts (Used 739/1000), so
+        # simply shrinking max_tokens to "under the limit" doesn't help -
+        # there just isn't enough budget left THIS minute regardless of
+        # request size. Groq's error names exactly how long until the
+        # window resets ("Please try again in 42.4s") - waiting that out is
+        # the actual fix, not guessing at a smaller max_tokens.
+        retry_after = _RETRY_AFTER_RE.search(response.text)
+        if retry_after:
+            wait_seconds = min(float(retry_after.group(1)) + 1.0, _MAX_RATE_LIMIT_WAIT_SECONDS)
+            time.sleep(wait_seconds)
+            response = post(8192)
+            continue
+
+        otpm_limit = _OTPM_LIMIT_RE.search(response.text)
+        if otpm_limit:
+            # No explicit wait time given - fall back to sizing the request
+            # to fit the account's per-minute cap instead.
+            retry_max_tokens = max(256, int(otpm_limit.group(1)) - 32)
             response = post(retry_max_tokens)
+            continue
+
+        break
 
     if response.status_code >= 400:
         # httpx's default raise_for_status() message drops the response body,

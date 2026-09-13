@@ -186,7 +186,16 @@ def parse_story(story_text: str, api_key: str) -> ParsedStory:
                 "model": model,
                 "messages": [
                     {"role": "system", "content": _SYSTEM_PROMPT},
-                    {"role": "user", "content": story_text},
+                    # Real test: qwen/qwen3.6-27b's <think> block alone
+                    # consumed this account's entire ~1000 token/minute
+                    # budget before reaching any JSON, even for a short
+                    # story - asking it to "keep reasoning brief" in the
+                    # system prompt wasn't enough. Qwen3 models support a
+                    # /no_think control directive that disables the
+                    # reasoning phase outright when appended to the user
+                    # turn; harmless no-op for non-Qwen3 models that don't
+                    # recognize it.
+                    {"role": "user", "content": f"{story_text}\n\n/no_think"},
                 ],
                 "temperature": 0.4,
                 # Generous headroom by default: a reasoning model's <think>

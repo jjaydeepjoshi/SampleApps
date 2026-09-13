@@ -171,13 +171,57 @@ _OTPM_LIMIT_RE = re.compile(r"output tokens per minute \(OTPM\): Limit (\d+)")
 _RETRY_AFTER_RE = re.compile(r"[Pp]lease try again in ([\d.]+)s")
 _MAX_RATE_LIMIT_WAIT_SECONDS = 60.0
 
+# A long story's JSON output can exceed what a single request can ever
+# produce under a tight per-minute token cap (no amount of waiting fixes
+# that - it's the same request every retry). Past this input size, split
+# into paragraph-based chunks and parse each separately, then merge the
+# results, so each individual request's output stays well under the cap.
+_CHUNK_CHAR_THRESHOLD = 1500
+_CHUNK_TARGET_CHARS = 900
 
-def parse_story(story_text: str, api_key: str) -> ParsedStory:
-    if not api_key:
-        raise RuntimeError("a Groq API key is required (set it in the app's Settings screen)")
 
-    model = _resolve_model(api_key)
+def _split_into_chunks(story_text: str) -> list[str]:
+    paragraphs = [p for p in re.split(r"\n\s*\n", story_text.strip()) if p.strip()]
+    if len(paragraphs) <= 1:
+        return [story_text]
 
+    chunks: list[str] = []
+    current: list[str] = []
+    current_len = 0
+    for para in paragraphs:
+        if current and current_len + len(para) > _CHUNK_TARGET_CHARS:
+            chunks.append("\n\n".join(current))
+            current = []
+            current_len = 0
+        current.append(para)
+        current_len += len(para)
+    if current:
+        chunks.append("\n\n".join(current))
+    return chunks
+
+
+def _merge_chunk_results(chunk_results: list[dict]) -> dict:
+    language = chunk_results[0].get("language", "en")
+    characters_by_name: dict[str, dict] = {}
+    scenes: list[dict] = []
+
+    for result in chunk_results:
+        for character in result.get("characters", []):
+            name = character.get("name")
+            # First appearance wins - keeps voice/personality consistent
+            # rather than risking a later chunk redescribing the same
+            # character slightly differently.
+            if name and name not in characters_by_name:
+                characters_by_name[name] = character
+        scenes.extend(result.get("scenes", []))
+
+    for i, scene in enumerate(scenes, start=1):
+        scene["id"] = i
+
+    return {"language": language, "characters": list(characters_by_name.values()), "scenes": scenes}
+
+
+def _call_groq_for_chunk(chunk_text: str, model: str, api_key: str) -> dict:
     def post(max_tokens: int) -> httpx.Response:
         return httpx.post(
             f"{_GROQ_BASE_URL}/chat/completions",
@@ -195,7 +239,7 @@ def parse_story(story_text: str, api_key: str) -> ParsedStory:
                     # reasoning phase outright when appended to the user
                     # turn; harmless no-op for non-Qwen3 models that don't
                     # recognize it.
-                    {"role": "user", "content": f"{story_text}\n\n/no_think"},
+                    {"role": "user", "content": f"{chunk_text}\n\n/no_think"},
                 ],
                 "temperature": 0.4,
                 # Generous headroom by default: a reasoning model's <think>
@@ -247,5 +291,20 @@ def parse_story(story_text: str, api_key: str) -> ParsedStory:
             f"Groq API error {response.status_code} (model={model}): {response.text}"
         )
     raw_text = response.json()["choices"][0]["message"]["content"]
-    data = _extract_json(raw_text)
+    return _extract_json(raw_text)
+
+
+def parse_story(story_text: str, api_key: str) -> ParsedStory:
+    if not api_key:
+        raise RuntimeError("a Groq API key is required (set it in the app's Settings screen)")
+
+    model = _resolve_model(api_key)
+
+    if len(story_text) <= _CHUNK_CHAR_THRESHOLD:
+        data = _call_groq_for_chunk(story_text, model, api_key)
+    else:
+        chunks = _split_into_chunks(story_text)
+        chunk_results = [_call_groq_for_chunk(chunk, model, api_key) for chunk in chunks]
+        data = chunk_results[0] if len(chunk_results) == 1 else _merge_chunk_results(chunk_results)
+
     return ParsedStory.model_validate(data)

@@ -90,7 +90,8 @@ Get a free Groq key at https://console.groq.com/keys (no credit card).
 
 - `POST /parse-story` — `{"story": "...", "groq_api_key": "..."}` → characters, scenes, dialogue, voice assignments
 - `POST /generate-audio` — `{"parsed_story": <output of /parse-story>}` → base64 audio clips per line
-- `POST /generate-video` — `{"parsed_story": ..., "audio_clips": [...]}` → base64 video clip per scene, timed to match that scene's dialogue
+- `POST /generate-scene-video` — `{"parsed_story": ..., "audio_clips": [...], "scene_id": N}` → base64 video clip for one scene, timed to match that scene's dialogue. The app calls this once per scene in a loop so it can show "scene X of Y" progress.
+- `POST /generate-video` — `{"parsed_story": ..., "audio_clips": [...]}` → base64 video clip per scene for the whole story in one request (kept for callers that don't need per-scene progress)
 - `POST /assemble-final-video` — `{"video_clips": [...], "audio_clips": [...]}` → base64 final MP4
 - `GET /health`
 

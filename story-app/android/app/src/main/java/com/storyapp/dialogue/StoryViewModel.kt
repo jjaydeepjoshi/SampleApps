@@ -9,9 +9,10 @@ import com.storyapp.dialogue.api.AudioClip
 import com.storyapp.dialogue.api.AudioRequest
 import com.storyapp.dialogue.api.FinalVideoRequest
 import com.storyapp.dialogue.api.ParsedStoryWithVoices
+import com.storyapp.dialogue.api.SceneVideoRequest
 import com.storyapp.dialogue.api.StoryApi
 import com.storyapp.dialogue.api.StoryRequest
-import com.storyapp.dialogue.api.VideoRequest
+import com.storyapp.dialogue.api.VideoClip
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -48,6 +49,8 @@ sealed class UiState {
     data class GeneratingVideo(
         val parsed: ParsedStoryWithVoices,
         val clips: List<AudioClip>,
+        val sceneIndex: Int,
+        val totalScenes: Int,
     ) : UiState()
     data class AssemblingVideo(
         val parsed: ParsedStoryWithVoices,
@@ -119,12 +122,20 @@ class StoryViewModel(application: Application) : AndroidViewModel(application) {
 
         viewModelScope.launch {
             try {
-                _uiState.value = UiState.GeneratingVideo(current.parsed, current.clips)
-                val video = api.generateVideo(VideoRequest(current.parsed, current.clips))
+                val scenes = current.parsed.scenes
+                val videoClips = mutableListOf<VideoClip>()
+                for ((index, scene) in scenes.withIndex()) {
+                    _uiState.value = UiState.GeneratingVideo(
+                        current.parsed, current.clips, sceneIndex = index + 1, totalScenes = scenes.size
+                    )
+                    videoClips += api.generateSceneVideo(
+                        SceneVideoRequest(current.parsed, current.clips, scene.id)
+                    )
+                }
 
                 _uiState.value = UiState.AssemblingVideo(current.parsed, current.clips)
                 val finalVideo = api.assembleFinalVideo(
-                    FinalVideoRequest(video_clips = video.clips, audio_clips = current.clips)
+                    FinalVideoRequest(video_clips = videoClips, audio_clips = current.clips)
                 )
 
                 val bytes = Base64.decode(finalVideo.video_base64, Base64.DEFAULT)

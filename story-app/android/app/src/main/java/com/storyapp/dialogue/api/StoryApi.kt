@@ -18,6 +18,9 @@ interface StoryApi {
     @POST("generate-video")
     suspend fun generateVideo(@Body request: VideoRequest): VideoResponse
 
+    @POST("generate-scene-video")
+    suspend fun generateSceneVideo(@Body request: SceneVideoRequest): VideoClip
+
     @POST("assemble-final-video")
     suspend fun assembleFinalVideo(@Body request: FinalVideoRequest): FinalVideoResponse
 

@@ -10,13 +10,15 @@ from .models import (
     FinalVideoRequest,
     FinalVideoResponse,
     ParsedStoryWithVoices,
+    SceneVideoRequest,
     StoryRequest,
+    VideoClip,
     VideoRequest,
     VideoResponse,
 )
 from .story_parser import parse_story
 from .tts import generate_dialogue_audio
-from .video_gen import generate_scene_videos
+from .video_gen import generate_scene_videos, generate_single_scene_video
 from .voice_assignment import assign_voices
 
 app = FastAPI(title="Story Dialogue API")
@@ -58,6 +60,19 @@ async def generate_video_endpoint(request: VideoRequest) -> VideoResponse:
     except Exception as exc:  # noqa: BLE001 - surfaced to the client
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     return VideoResponse(clips=clips)
+
+
+@app.post("/generate-scene-video", response_model=VideoClip)
+async def generate_scene_video_endpoint(request: SceneVideoRequest) -> VideoClip:
+    # One scene per request, called in a loop by the app, so it can show
+    # "scene X of Y" progress instead of one opaque spinner for the whole
+    # video.
+    try:
+        return await generate_single_scene_video(
+            request.parsed_story, request.audio_clips, request.scene_id
+        )
+    except Exception as exc:  # noqa: BLE001 - surfaced to the client
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
 
 
 @app.post("/assemble-final-video", response_model=FinalVideoResponse)

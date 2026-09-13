@@ -83,6 +83,12 @@ class VideoResponse(BaseModel):
     clips: list[VideoClip]
 
 
+class SceneVideoRequest(BaseModel):
+    parsed_story: ParsedStoryWithVoices
+    audio_clips: list[AudioClip] = []
+    scene_id: int
+
+
 class FinalVideoRequest(BaseModel):
     video_clips: list[VideoClip]
     audio_clips: list[AudioClip]

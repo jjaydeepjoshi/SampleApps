@@ -172,7 +172,9 @@ fun StoryScreen(viewModel: StoryViewModel) {
             is UiState.Idle -> Unit
             is UiState.Parsing -> LoadingRow("Understanding the story...")
             is UiState.GeneratingAudio -> LoadingRow("Generating character voices...")
-            is UiState.GeneratingVideo -> LoadingRow("Generating scene videos...")
+            is UiState.GeneratingVideo -> LoadingRow(
+                "Generating scene video (${current.sceneIndex} of ${current.totalScenes})..."
+            )
             is UiState.AssemblingVideo -> LoadingRow("Assembling final video...")
             is UiState.Error -> Column {
                 Text(

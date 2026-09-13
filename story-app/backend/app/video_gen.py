@@ -93,34 +93,52 @@ def _animate_image(image_path: str, duration_seconds: float, out_path: str) -> N
         raise RuntimeError(f"ffmpeg animation failed: {result.stderr[-2000:]}")
 
 
-async def generate_scene_videos(
-    parsed: ParsedStoryWithVoices, audio_clips: list[AudioClip]
-) -> list[VideoClip]:
+def _find_scene(parsed: ParsedStoryWithVoices, scene_id: int) -> Scene:
+    for scene in parsed.scenes:
+        if scene.id == scene_id:
+            return scene
+    raise RuntimeError(f"story has no scene with id {scene_id}")
+
+
+async def generate_single_scene_video(
+    parsed: ParsedStoryWithVoices, audio_clips: list[AudioClip], scene_id: int
+) -> VideoClip:
+    # Generating one scene per request (rather than the whole story in one
+    # call) lets the app show real progress - "scene 2 of 5" - instead of a
+    # single opaque "generating video..." spinner for the whole thing.
+    scene = _find_scene(parsed, scene_id)
     characters_by_name = {c.name: c for c in parsed.characters}
-    clips: list[VideoClip] = []
+    prompt = _scene_prompt(scene, characters_by_name)
 
     with tempfile.TemporaryDirectory() as tmp:
         async with httpx.AsyncClient() as client:
-            for scene in parsed.scenes:
-                prompt = _scene_prompt(scene, characters_by_name)
-                image_bytes = await _generate_scene_image(client, prompt)
+            image_bytes = await _generate_scene_image(client, prompt)
 
-                image_path = os.path.join(tmp, f"scene_{scene.id}.png")
-                with open(image_path, "wb") as f:
-                    f.write(image_bytes)
+        image_path = os.path.join(tmp, f"scene_{scene.id}.png")
+        with open(image_path, "wb") as f:
+            f.write(image_bytes)
 
-                duration = _scene_duration_seconds(scene.id, audio_clips)
-                video_path = os.path.join(tmp, f"scene_{scene.id}.mp4")
-                _animate_image(image_path, duration, video_path)
+        duration = _scene_duration_seconds(scene.id, audio_clips)
+        video_path = os.path.join(tmp, f"scene_{scene.id}.mp4")
+        _animate_image(image_path, duration, video_path)
 
-                with open(video_path, "rb") as f:
-                    video_bytes = f.read()
+        with open(video_path, "rb") as f:
+            video_bytes = f.read()
 
-                clips.append(
-                    VideoClip(
-                        scene_id=scene.id,
-                        prompt=prompt,
-                        video_base64=base64.b64encode(video_bytes).decode("ascii"),
-                    )
-                )
-    return clips
+    return VideoClip(
+        scene_id=scene.id,
+        prompt=prompt,
+        video_base64=base64.b64encode(video_bytes).decode("ascii"),
+    )
+
+
+async def generate_scene_videos(
+    parsed: ParsedStoryWithVoices, audio_clips: list[AudioClip]
+) -> list[VideoClip]:
+    # Kept for any caller that wants the whole story's video in one request;
+    # the app itself now calls generate_single_scene_video per scene instead
+    # so it can show progress between scenes.
+    return [
+        await generate_single_scene_video(parsed, audio_clips, scene.id)
+        for scene in parsed.scenes
+    ]

@@ -23,7 +23,15 @@ from .models import AudioClip, Character, ParsedStoryWithVoices, Scene, VideoCli
 _IMAGE_API_URL = "https://image.pollinations.ai/prompt/{prompt}"
 
 _MIN_SCENE_SECONDS = 4.0
-_FRAME_RATE = 25
+_MAX_SCENE_SECONDS = 20.0
+# Render's free tier has very little RAM, and a silent container restart
+# with zero error logged (no Python traceback - just the process vanishing
+# mid-request) is the signature of an OOM kill, not a code exception. Encoding
+# at 1280x720/25fps was almost certainly the cause: lower resolution and
+# frame rate cut ffmpeg's memory footprint substantially for the same clip.
+_VIDEO_WIDTH = 854
+_VIDEO_HEIGHT = 480
+_FRAME_RATE = 15
 _RETRY_ATTEMPTS = 3
 _RETRY_DELAY_SECONDS = 2.0
 
@@ -49,7 +57,7 @@ async def _generate_scene_image(client: httpx.AsyncClient, prompt: str) -> bytes
         try:
             response = await client.get(
                 url,
-                params={"width": 1280, "height": 720, "nologo": "true"},
+                params={"width": _VIDEO_WIDTH, "height": _VIDEO_HEIGHT, "nologo": "true"},
                 timeout=120.0,
             )
         except httpx.TransportError as exc:
@@ -69,20 +77,28 @@ async def _generate_scene_image(client: httpx.AsyncClient, prompt: str) -> bytes
 
 def _scene_duration_seconds(scene_id: int, audio_clips: list[AudioClip]) -> float:
     total = sum(c.duration_seconds for c in audio_clips if c.scene_id == scene_id)
-    return max(_MIN_SCENE_SECONDS, total)
+    return min(_MAX_SCENE_SECONDS, max(_MIN_SCENE_SECONDS, total))
 
 
 def _animate_image(image_path: str, duration_seconds: float, out_path: str) -> None:
     frames = max(1, int(duration_seconds * _FRAME_RATE))
-    zoompan = f"zoompan=z='min(zoom+0.0008,1.2)':d={frames}:s=1280x720:fps={_FRAME_RATE}"
+    zoompan = (
+        f"zoompan=z='min(zoom+0.0008,1.2)':d={frames}:"
+        f"s={_VIDEO_WIDTH}x{_VIDEO_HEIGHT}:fps={_FRAME_RATE}"
+    )
     result = subprocess.run(
         [
             "ffmpeg", "-y",
             "-loop", "1",
             "-i", image_path,
-            "-vf", f"scale=1280:720,{zoompan},format=yuv420p",
+            "-vf", f"scale={_VIDEO_WIDTH}:{_VIDEO_HEIGHT},{zoompan},format=yuv420p",
             "-t", str(duration_seconds),
             "-r", str(_FRAME_RATE),
+            # Free-tier memory is tight - a single encoder thread and the
+            # fastest preset trade a slightly larger file for a much smaller
+            # peak memory footprint, which is what actually matters here.
+            "-preset", "ultrafast",
+            "-threads", "1",
             out_path,
         ],
         capture_output=True,

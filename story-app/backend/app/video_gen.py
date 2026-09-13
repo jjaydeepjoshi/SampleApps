@@ -23,6 +23,7 @@ from .models import AudioClip, Character, ParsedStoryWithVoices, Scene, VideoCli
 _IMAGE_API_URL = "https://image.pollinations.ai/prompt/{prompt}"
 
 _MIN_SCENE_SECONDS = 4.0
+_MIN_LINE_SECONDS = 1.0
 _MAX_SCENE_SECONDS = 20.0
 # Render's free tier has very little RAM, and a silent container restart
 # with zero error logged (no Python traceback - just the process vanishing
@@ -75,6 +76,49 @@ async def _generate_scene_image(client: httpx.AsyncClient, prompt: str) -> bytes
     raise RuntimeError(f"Scene image generation failed: {last_error}")
 
 
+# A still scene image can't show who's actually speaking, so instead each
+# dialogue line gets its speaking character's own portrait for that line's
+# exact audio duration, switching portraits as the speaker changes. Not
+# lip-synced (no free service does that), but the visual now actually
+# tracks who is talking instead of showing one static random scene image
+# throughout. Portraits are cached per character (in-memory, per backend
+# process) since the same character speaks in multiple scenes/lines and
+# would otherwise be re-generated identically every time.
+_portrait_cache: dict[str, bytes] = {}
+
+
+def _portrait_prompt(character: Character) -> str:
+    return (
+        "cinematic close-up portrait photo of a person talking, headshot, "
+        f"looking at camera. {character.description}. {character.personality}."
+    )
+
+
+async def _get_character_portrait(client: httpx.AsyncClient, character: Character) -> bytes:
+    cached = _portrait_cache.get(character.name)
+    if cached is not None:
+        return cached
+    image_bytes = await _generate_scene_image(client, _portrait_prompt(character))
+    _portrait_cache[character.name] = image_bytes
+    return image_bytes
+
+
+def _concat_videos(video_paths: list[str], out_path: str) -> None:
+    tmp_dir = os.path.dirname(out_path)
+    list_path = os.path.join(tmp_dir, "concat_list.txt")
+    with open(list_path, "w") as f:
+        for path in video_paths:
+            f.write(f"file '{path}'\n")
+    result = subprocess.run(
+        ["ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", list_path, "-c", "copy", out_path],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(f"ffmpeg concat failed: {result.stderr[-2000:]}")
+
+
 def _scene_duration_seconds(scene_id: int, audio_clips: list[AudioClip]) -> float:
     total = sum(c.duration_seconds for c in audio_clips if c.scene_id == scene_id)
     return min(_MAX_SCENE_SECONDS, max(_MIN_SCENE_SECONDS, total))
@@ -125,18 +169,48 @@ async def generate_single_scene_video(
     scene = _find_scene(parsed, scene_id)
     characters_by_name = {c.name: c for c in parsed.characters}
     prompt = _scene_prompt(scene, characters_by_name)
+    scene_audio = [clip for clip in audio_clips if clip.scene_id == scene_id]
 
     with tempfile.TemporaryDirectory() as tmp:
         async with httpx.AsyncClient() as client:
-            image_bytes = await _generate_scene_image(client, prompt)
+            if scene.dialogue and len(scene_audio) == len(scene.dialogue):
+                # One clip per dialogue line, using that line's speaker's
+                # portrait for that line's own audio duration - see the
+                # module docstring above _portrait_cache for why.
+                line_paths: list[str] = []
+                for i, (line, audio) in enumerate(zip(scene.dialogue, scene_audio)):
+                    character = characters_by_name.get(line.speaker)
+                    if character is not None:
+                        image_bytes = await _get_character_portrait(client, character)
+                    else:
+                        image_bytes = await _generate_scene_image(client, prompt)
 
-        image_path = os.path.join(tmp, f"scene_{scene.id}.png")
-        with open(image_path, "wb") as f:
-            f.write(image_bytes)
+                    image_path = os.path.join(tmp, f"line_{i}.png")
+                    with open(image_path, "wb") as f:
+                        f.write(image_bytes)
 
-        duration = _scene_duration_seconds(scene.id, audio_clips)
-        video_path = os.path.join(tmp, f"scene_{scene.id}.mp4")
-        _animate_image(image_path, duration, video_path)
+                    line_duration = min(_MAX_SCENE_SECONDS, max(_MIN_LINE_SECONDS, audio.duration_seconds))
+                    line_video_path = os.path.join(tmp, f"line_{i}.mp4")
+                    _animate_image(image_path, line_duration, line_video_path)
+                    line_paths.append(line_video_path)
+
+                video_path = os.path.join(tmp, f"scene_{scene.id}.mp4")
+                if len(line_paths) == 1:
+                    video_path = line_paths[0]
+                else:
+                    _concat_videos(line_paths, video_path)
+            else:
+                # No dialogue in this scene (or audio didn't line up 1:1
+                # with it) - fall back to a single scene-setting image for
+                # the whole scene, same as before.
+                image_bytes = await _generate_scene_image(client, prompt)
+                image_path = os.path.join(tmp, f"scene_{scene.id}.png")
+                with open(image_path, "wb") as f:
+                    f.write(image_bytes)
+
+                duration = _scene_duration_seconds(scene.id, audio_clips)
+                video_path = os.path.join(tmp, f"scene_{scene.id}.mp4")
+                _animate_image(image_path, duration, video_path)
 
         with open(video_path, "rb") as f:
             video_bytes = f.read()

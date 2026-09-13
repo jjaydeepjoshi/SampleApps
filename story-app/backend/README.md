@@ -14,12 +14,16 @@ required):
 3. **Dialogue audio generation** (`app/tts.py`) — uses `edge-tts` (free,
    keyless) to synthesize each dialogue line, approximating emotion via
    rate/pitch, and measures real duration with `ffprobe`.
-4. **Scene video generation** (`app/video_gen.py`) — generates one still
-   image per scene from Pollinations.ai's free, keyless text-to-image API,
-   then animates it with an `ffmpeg` Ken Burns pan/zoom, timed to match that
-   scene's total dialogue duration. (Hugging Face's Inference API was tried
-   first but turned out to be unreachable from at least this backend's host
-   network — see the trade-offs section below.)
+4. **Scene video generation** (`app/video_gen.py`) — for each dialogue line,
+   generates (and caches per character) a portrait of that line's speaker
+   from Pollinations.ai's free, keyless text-to-image API, then animates it
+   with an `ffmpeg` Ken Burns pan/zoom for exactly that line's audio
+   duration; a scene's clip is these per-line clips concatenated, so the
+   visual switches to match whoever is speaking. A scene with no dialogue
+   falls back to a single setting/description image for the whole scene.
+   (Hugging Face's Inference API was tried first but turned out to be
+   unreachable from at least this backend's host network — see the
+   trade-offs section below.)
 5. **Final video assembly** (`app/assembly.py`) — muxes each scene's dialogue
    audio onto its animated clip and concatenates all scenes into one final
    MP4 via `ffmpeg`.
@@ -102,4 +106,6 @@ Get a free Groq key at https://console.groq.com/keys (no credit card).
 - `edge-tts` has no true emotion control (just rate/pitch approximation) and a fixed voice catalog — see `_VOICE_POOLS` in `voice_assignment.py` to add more languages/voices. Hindi currently only has one male and one female voice (no age variety) since that's all edge-tts ships for `hi-IN`.
 - Scene image prompts are built from the setting/description in the story's own language; most text-to-image models work best with English prompts, so non-English stories may get lower-quality scene images even though dialogue audio is correct.
 - There's no free true text-to-video API, so scene "video" here is a still AI image animated with a pan/zoom effect rather than actual generated motion. This is a common, genuinely free technique but won't look like Runway/Pika output. If you later get budget for a real video-gen API, swap `_generate_scene_image` + `_animate_image` in `video_gen.py` for a text-to-video call — the rest of the pipeline (prompt building, duration matching, assembly) carries over unchanged.
+- Per-line character portraits are not lip-synced or animated faces — no free service does that. It's a per-character still image switched in time with the dialogue audio, which at least shows the right character while they're speaking instead of one static scene image throughout. Real lip-synced/animated talking video would need a paid service (e.g. HeyGen, D-ID) or a locally-run model with real compute (e.g. SadTalker/Wav2Lip on a GPU), neither of which fits the free/keyless constraint this stack is built around.
+- `_portrait_cache` is a plain in-memory dict, per backend process, never evicted — fine for personal/low-traffic use, but would grow unbounded with many distinct characters across many stories on a long-running shared instance.
 - **Why Pollinations.ai instead of Hugging Face**: Hugging Face's Inference API (both the legacy `api-inference.huggingface.co` host and the newer `router.huggingface.co`) was unreachable from a real Render deployment — DNS resolution failed persistently ("[Errno -5] No address associated with hostname") even with retries and forced IPv4, while Groq and edge-tts worked fine from the same instance. That pattern (one third-party's domains specifically unreachable, others fine) is consistent with the host's IP range being blocked by that provider's anti-abuse system rather than a bug in this code. Pollinations.ai needs no API key/account, which also removed a whole Settings field from the app.
